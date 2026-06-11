@@ -910,6 +910,21 @@ async function startBot(loginWithEmail) {
                                 }
                                 setTimeout(() => changeFbStateByCode = false, 1000);
                         }
+
+                        // ——————————— AUTO-SAVE APPSTATE ——————————— //
+                        // Keeps the saved appstate file perpetually fresh so any
+                        // re-login always uses the most recent session cookies.
+                        try {
+                                api.enableAutoSaveAppState({
+                                        filePath: dirAccount,
+                                        interval: 20 * 60 * 1000, // save every 20 minutes
+                                        saveOnLogin: true
+                                });
+                                log.info("AUTO SAVE APPSTATE", `Session will auto-save to ${path.basename(dirAccount)} every 20 minutes`);
+                        }
+                        catch (err) {
+                                log.warn("AUTO SAVE APPSTATE", "Could not enable auto-save appstate", err);
+                        }
                         if (hasBanned == true) {
                                 log.err('GBAN', getText('login', 'youAreBanned'));
                                 process.exit();
@@ -1079,13 +1094,33 @@ async function startBot(loginWithEmail) {
                                                         
                                                         setTimeout(async () => {
                                                                 log.info("SINGLE ACCOUNT", "Retrying with same account...");
+
+                                                                // ── Step 1: silently refresh fb_dtsg security token ──
+                                                                try {
+                                                                        await api.refreshFb_dtsg();
+                                                                        const freshState = filterKeysAppState(api.getAppState());
+                                                                        changeFbStateByCode = true;
+                                                                        writeFileSync(dirAccount, JSON.stringify(freshState, null, 2));
+                                                                        setTimeout(() => changeFbStateByCode = false, 1000);
+                                                                        // Update in-memory appState reference so cookieString below is fresh
+                                                                        appState.length = 0;
+                                                                        appState.push(...freshState);
+                                                                        log.info("SESSION REFRESH", "fb_dtsg refreshed and appstate saved");
+                                                                }
+                                                                catch (refreshErr) {
+                                                                        log.warn("SESSION REFRESH", "fb_dtsg refresh failed, proceeding with existing appstate", refreshErr.message || refreshErr);
+                                                                }
+
+                                                                // ── Step 2: check if session is live ──
                                                                 const cookieString = appState.map(i => i.key + "=" + i.value).join("; ");
                                                                 const cookieIsLive = await checkLiveCookie(cookieString, facebookAccount.userAgent);
                                                                 if (cookieIsLive) {
                                                                         isSendNotiErrorMessage = false;
                                                                         global.GoatBot.Listening = api.listenMqtt(createCallBackListen());
+                                                                        log.info("SINGLE ACCOUNT", "Session recovered — re-listening");
                                                                 } else {
-                                                                        // Cookie still invalid, try full re-login
+                                                                        // Cookie still invalid after token refresh — full re-login
+                                                                        log.warn("SINGLE ACCOUNT", "Cookie still invalid after refresh — triggering full re-login");
                                                                         startBot(true);
                                                                 }
                                                         }, retryDelay);
