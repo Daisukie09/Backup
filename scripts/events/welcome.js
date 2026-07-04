@@ -2,6 +2,14 @@ const axios = require("axios");
 const { getTime, drive } = global.utils;
 
 const WELCOME_GIF_URL = "https://files.catbox.moe/sdf7f0.gif";
+let cachedGifBuffer = null;
+
+async function getGifBuffer() {
+	if (cachedGifBuffer) return cachedGifBuffer;
+	const response = await axios.get(WELCOME_GIF_URL, { responseType: "arraybuffer", timeout: 15000 });
+	cachedGifBuffer = Buffer.from(response.data);
+	return cachedGifBuffer;
+}
 
 module.exports = {
 	config: {
@@ -74,10 +82,10 @@ module.exports = {
 					}
 
 					try {
-						const response = await axios.get(WELCOME_GIF_URL, { responseType: "stream", timeout: 15000 });
-						const stream = response.data;
-						stream.path = "welcome.gif";
-						form.attachment = stream;
+						const buf = await getGifBuffer();
+						const attachment = Buffer.from(buf);
+						attachment.path = "welcome.gif";
+						form.attachment = attachment;
 					} catch (e) {
 						console.error("[WELCOME] Failed to fetch GIF:", e.message);
 					}
