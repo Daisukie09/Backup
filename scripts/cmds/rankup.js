@@ -39,7 +39,7 @@ module.exports = {
       on: "on",
       off: "off",
       successText: "success notification rankup!",
-      levelup: "★★ Congratulations {name} on reaching level {level}!",
+      levelup: "★★ Congratulations {name} your Keyboard Warrior has reaching level {level}!",
     },
   },
 
