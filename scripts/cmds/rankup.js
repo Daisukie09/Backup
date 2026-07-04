@@ -3,7 +3,7 @@ const path = require("path");
 
 module.exports = {
   config: {
-    name: "rankupbackup",
+    name: "rankup",
     version: "1.1.2",
     author: "VincentSensei",
     description: {
