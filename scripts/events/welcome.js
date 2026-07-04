@@ -1,6 +1,4 @@
-const fs = require("fs-extra");
-const path = require("path");
-const { getTime, drive } = global.utils;
+const { getTime, drive, getStreamFromURL } = global.utils;
 
 module.exports = {
 	config: {
@@ -72,10 +70,8 @@ module.exports = {
 						}];
 					}
 
-					const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
-					if (fs.existsSync(gifPath)) {
-						form.attachment = fs.createReadStream(gifPath);
-					}
+					const gifStream = await getStreamFromURL("https://i.imgur.com/5Xq3dJB.gif", "welcome.gif");
+					form.attachment = gifStream;
 
 					if (threadData.data.welcomeAttachment) {
 						const files = threadData.data.welcomeAttachment;
@@ -88,11 +84,7 @@ module.exports = {
 							.map(({ value }) => value);
 
 						if (customAttachments.length > 0) {
-							if (form.attachment) {
-								form.attachment = [form.attachment, ...customAttachments];
-							} else {
-								form.attachment = customAttachments;
-							}
+							form.attachment = [form.attachment, ...customAttachments];
 						}
 					}
 
