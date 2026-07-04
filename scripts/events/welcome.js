@@ -74,12 +74,12 @@ module.exports = {
 						}];
 					}
 
-				const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
-				if (fs.existsSync(gifPath)) {
-					const stream = fs.createReadStream(gifPath);
-					stream.path = "welcome.gif";
-					form.attachment = stream;
-				}
+					const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
+					if (fs.existsSync(gifPath)) {
+						const attachment = fs.createReadStream(gifPath);
+						attachment.path = "welcome.gif";
+						form.attachment = attachment;
+					}
 
 					if (threadData.data.welcomeAttachment) {
 						const files = threadData.data.welcomeAttachment;
@@ -100,7 +100,12 @@ module.exports = {
 						}
 					}
 
-					message.send(form);
+					try {
+						await api.sendMessage(form, threadID);
+					} catch (err) {
+						console.error("[WELCOME] Error:", err);
+						api.sendMessage(form, threadID);
+					}
 				}
 			};
 	}
