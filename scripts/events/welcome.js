@@ -74,10 +74,12 @@ module.exports = {
 						}];
 					}
 
-					const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
-					if (fs.existsSync(gifPath)) {
-						form.attachment = fs.createReadStream(gifPath);
-					}
+				const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
+				if (fs.existsSync(gifPath)) {
+					const stream = fs.createReadStream(gifPath);
+					stream.path = "welcome.gif";
+					form.attachment = stream;
+				}
 
 					if (threadData.data.welcomeAttachment) {
 						const files = threadData.data.welcomeAttachment;
