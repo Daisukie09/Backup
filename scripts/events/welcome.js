@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { Readable } = require("stream");
 const { getTime, drive } = global.utils;
 
 const WELCOME_GIF_URL = "https://files.catbox.moe/sdf7f0.gif";
@@ -6,10 +7,13 @@ let cachedGifBuffer = null;
 
 async function getGifBuffer() {
 	if (cachedGifBuffer) return cachedGifBuffer;
-	const response = await axios.get(WELCOME_GIF_URL, { responseType: "arraybuffer", timeout: 15000 });
+	const response = await axios.get(WELCOME_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
 	cachedGifBuffer = Buffer.from(response.data);
+	console.log("[WELCOME] GIF cached successfully");
 	return cachedGifBuffer;
 }
+
+getGifBuffer().catch(e => console.error("[WELCOME] Failed to pre-cache GIF:", e.message));
 
 module.exports = {
 	config: {
@@ -41,7 +45,7 @@ module.exports = {
 			return async function () {
 				const { threadID } = event;
 				const threadData = await threadsData.get(threadID);
-				if (!threadData.settings.sendWelcomeMessage)
+				if (threadData.settings.sendWelcomeMessage === false)
 					return;
 
 				const { addedParticipants } = event.logMessageData;
@@ -83,9 +87,9 @@ module.exports = {
 
 					try {
 						const buf = await getGifBuffer();
-						const attachment = Buffer.from(buf);
-						attachment.path = "welcome.gif";
-						form.attachment = attachment;
+						const stream = Readable.from(buf);
+						stream.path = "welcome.gif";
+						form.attachment = stream;
 					} catch (e) {
 						console.error("[WELCOME] Failed to fetch GIF:", e.message);
 					}
