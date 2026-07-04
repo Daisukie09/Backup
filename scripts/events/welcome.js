@@ -2,7 +2,7 @@ const axios = require("axios");
 const { Readable } = require("stream");
 const { getTime, drive } = global.utils;
 
-const WELCOME_GIF_URL = "https://thumbs2.imgbox.com/47/a3/KqMEHaNO_t.gif";
+const WELCOME_GIF_URL = "https://files.catbox.moe/sdf7f0.gif";
 let cachedGifBuffer = null;
 
 async function getGifBuffer() {
