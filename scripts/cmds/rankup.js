@@ -1,5 +1,18 @@
-const fs = require("fs-extra");
-const path = require("path");
+const axios = require("axios");
+const { Readable } = require("stream");
+
+const RANKUP_GIF_URL = "https://images2.imgbox.com/6c/dd/nBFk2PuX_o.gif";
+let cachedGifBuffer = null;
+
+async function getGifBuffer() {
+	if (cachedGifBuffer) return cachedGifBuffer;
+	const response = await axios.get(RANKUP_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
+	cachedGifBuffer = Buffer.from(response.data);
+	console.log("[RANKUP] GIF cached successfully");
+	return cachedGifBuffer;
+}
+
+getGifBuffer().catch(e => console.error("[RANKUP] Failed to pre-cache GIF:", e.message));
 
 module.exports = {
   config: {
@@ -11,7 +24,7 @@ module.exports = {
       en: "Rankup notification for each group",
     },
     category: "system",
-    usage: "rankupbackup [on/off]",
+    usage: "rankup [on/off]",
     role: 0,
   },
 
@@ -40,7 +53,7 @@ module.exports = {
       );
       const status = rankupEnabled ? "ON" : "OFF";
       return api.sendMessage(
-        `📊 Rankup Status: ${status}\nUse: rankupbackup [on/off]`,
+        `📊 Rankup Status: ${status}\nUse: rankup [on/off]`,
         threadID,
         messageID
       );
@@ -60,7 +73,7 @@ module.exports = {
       );
     }
 
-    return api.sendMessage(`Usage: rankupbackup [on/off]`, threadID, messageID);
+    return api.sendMessage(`Usage: rankup [on/off]`, threadID, messageID);
   },
 
   onChat: async function ({
@@ -113,9 +126,13 @@ module.exports = {
           mentions: [{ tag: name, id: senderID }],
         };
 
-        const gifPath = path.join(__dirname, "canvas/rankup.gif");
-        if (fs.existsSync(gifPath)) {
-          form.attachment = fs.createReadStream(gifPath);
+        try {
+          const buf = await getGifBuffer();
+          const stream = Readable.from(buf);
+          stream.path = "rankup.gif";
+          form.attachment = stream;
+        } catch (e) {
+          console.error("[RANKUP] Failed to fetch GIF:", e.message);
         }
 
         await message.send(form);
