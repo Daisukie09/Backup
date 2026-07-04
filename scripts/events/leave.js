@@ -1,11 +1,24 @@
-const fs = require("fs");
-const path = require("path");
+const axios = require("axios");
+const { Readable } = require("stream");
 const { getTime, drive } = global.utils;
+
+const GOODBYE_GIF_URL = "https://images2.imgbox.com/47/29/b72csY6y_o.gif";
+let cachedGifBuffer = null;
+
+async function getGifBuffer() {
+	if (cachedGifBuffer) return cachedGifBuffer;
+	const response = await axios.get(GOODBYE_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
+	cachedGifBuffer = Buffer.from(response.data);
+	console.log("[LEAVE] GIF cached successfully");
+	return cachedGifBuffer;
+}
+
+getGifBuffer().catch(e => console.error("[LEAVE] Failed to pre-cache GIF:", e.message));
 
 module.exports = {
 	config: {
-		name: "leavebackup",
-		version: "1.0",
+		name: "leave",
+		version: "1.4",
 		author: "NTKhang",
 		category: "events"
 	},
@@ -36,7 +49,7 @@ module.exports = {
 			return async function () {
 				const { threadID } = event;
 				const threadData = await threadsData.get(threadID);
-				if (!threadData.settings.sendLeaveMessage)
+				if (threadData.settings.sendLeaveMessage === false)
 					return;
 				const { leftParticipantFbId } = event.logMessageData;
 				if (leftParticipantFbId == api.getCurrentUserID())
@@ -77,9 +90,13 @@ module.exports = {
 					}];
 				}
 
-				const gifPath = path.join(__dirname, "../cmds/canvas/goodbye.gif");
-				if (fs.existsSync(gifPath)) {
-					form.attachment = fs.createReadStream(gifPath);
+				try {
+					const buf = await getGifBuffer();
+					const stream = Readable.from(buf);
+					stream.path = "goodbye.gif";
+					form.attachment = stream;
+				} catch (e) {
+					console.error("[LEAVE] Failed to fetch GIF:", e.message);
 				}
 
 				if (threadData.data.leaveAttachment) {
