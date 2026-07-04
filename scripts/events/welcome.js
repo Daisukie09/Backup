@@ -1,4 +1,4 @@
-const fs = require("fs");
+const fs = require("fs-extra");
 const path = require("path");
 const { getTime, drive } = global.utils;
 
@@ -63,9 +63,7 @@ module.exports = {
 									getLang("session4")
 						);
 
-					const form = {
-						body: welcomeMessage
-					};
+					const form = { body: welcomeMessage };
 
 					if (welcomeMessage.includes("{userNameTag}")) {
 						form.mentions = [{
@@ -76,9 +74,7 @@ module.exports = {
 
 					const gifPath = path.join(__dirname, "../cmds/canvas/welcome.gif");
 					if (fs.existsSync(gifPath)) {
-						const attachment = fs.createReadStream(gifPath);
-						attachment.path = "welcome.gif";
-						form.attachment = attachment;
+						form.attachment = fs.createReadStream(gifPath);
 					}
 
 					if (threadData.data.welcomeAttachment) {
@@ -100,12 +96,7 @@ module.exports = {
 						}
 					}
 
-					try {
-						await api.sendMessage(form, threadID);
-					} catch (err) {
-						console.error("[WELCOME] Error:", err);
-						api.sendMessage(form, threadID);
-					}
+					message.send(form);
 				}
 			};
 	}
