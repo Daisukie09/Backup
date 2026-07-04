@@ -1,4 +1,7 @@
-const { getTime, drive, getStreamFromURL } = global.utils;
+const axios = require("axios");
+const { getTime, drive } = global.utils;
+
+const WELCOME_GIF_URL = "https://files.catbox.moe/sdf7f0.gif";
 
 module.exports = {
 	config: {
@@ -70,8 +73,14 @@ module.exports = {
 						}];
 					}
 
-					const gifStream = await getStreamFromURL("https://i.imgur.com/5Xq3dJB.gif", "welcome.gif");
-					form.attachment = gifStream;
+					try {
+						const response = await axios.get(WELCOME_GIF_URL, { responseType: "stream", timeout: 15000 });
+						const stream = response.data;
+						stream.path = "welcome.gif";
+						form.attachment = stream;
+					} catch (e) {
+						console.error("[WELCOME] Failed to fetch GIF:", e.message);
+					}
 
 					if (threadData.data.welcomeAttachment) {
 						const files = threadData.data.welcomeAttachment;
@@ -84,7 +93,11 @@ module.exports = {
 							.map(({ value }) => value);
 
 						if (customAttachments.length > 0) {
-							form.attachment = [form.attachment, ...customAttachments];
+							if (form.attachment) {
+								form.attachment = [form.attachment, ...customAttachments];
+							} else {
+								form.attachment = customAttachments;
+							}
 						}
 					}
 
