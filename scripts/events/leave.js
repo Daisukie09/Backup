@@ -1,9 +1,11 @@
+const fs = require("fs");
+const path = require("path");
 const { getTime, drive } = global.utils;
 
 module.exports = {
 	config: {
-		name: "leave",
-		version: "1.4",
+		name: "leavebackup",
+		version: "1.0",
 		author: "NTKhang",
 		category: "events"
 	},
@@ -44,13 +46,6 @@ module.exports = {
 				const threadName = threadData.threadName;
 				const userName = await usersData.getName(leftParticipantFbId);
 
-				// {userName}   : name of the user who left the group
-				// {type}       : type of the message (leave)
-				// {boxName}    : name of the box
-				// {threadName} : name of the box
-				// {time}       : time
-				// {session}    : session
-
 				let { leaveMessage = getLang("defaultLeaveMessage") } = threadData.data;
 				const form = {
 					mentions: leaveMessage.match(/\{userNameTag\}/g) ? [{
@@ -82,16 +77,30 @@ module.exports = {
 					}];
 				}
 
+				const gifPath = path.join(__dirname, "../cmds/canvas/goodbye.gif");
+				if (fs.existsSync(gifPath)) {
+					form.attachment = fs.createReadStream(gifPath);
+				}
+
 				if (threadData.data.leaveAttachment) {
 					const files = threadData.data.leaveAttachment;
 					const attachments = files.reduce((acc, file) => {
 						acc.push(drive.getFile(file, "stream"));
 						return acc;
 					}, []);
-					form.attachment = (await Promise.allSettled(attachments))
+					const customAttachments = (await Promise.allSettled(attachments))
 						.filter(({ status }) => status == "fulfilled")
 						.map(({ value }) => value);
+
+					if (customAttachments.length > 0) {
+						if (form.attachment) {
+							form.attachment = [form.attachment, ...customAttachments];
+						} else {
+							form.attachment = customAttachments;
+						}
+					}
 				}
+
 				message.send(form);
 			};
 	}
