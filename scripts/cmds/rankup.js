@@ -88,15 +88,15 @@ module.exports = {
         if (pos !== -1) leaderboardRank = pos + 1;
       } catch {}
 
-      const name = await usersData.getName(senderID) || "User";
+      const userName = await usersData.getName(senderID) || "User";
 
       let rankupMessage = getLang("levelup")
-        .replace(/{name}/g, name)
+        .replace(/{name}/g, userName)
         .replace(/{level}/g, level || 1);
 
       const form = {
         body: `${getLang("checkTitle")}\n${rankupMessage}\n${getLang("rankInfo").replace("{level}", String(level || 1)).replace("{exp}", String(exp || 0)).replace("{rank}", String(leaderboardRank))}`,
-        mentions: [{ tag: name, id: senderID }],
+        mentions: [{ tag: userName, id: senderID }],
       };
 
       try {
@@ -151,13 +151,13 @@ module.exports = {
       const currentLevel = expToLevel(exp);
 
       if (currentLevel > prevLevel && currentLevel > 1) {
-        let name = await usersData.getName(senderID);
-        if (!name) {
+        let userName = await usersData.getName(senderID);
+        if (!userName) {
           try {
             const info = await api.getUserInfo(senderID);
-            name = info[senderID]?.name || "User";
+            userName = info[senderID]?.name || "User";
           } catch {
-            name = "User";
+            userName = "User";
           }
         }
 
@@ -171,20 +171,21 @@ module.exports = {
           if (pos !== -1) leaderboardRank = pos + 1;
         } catch {}
 
-        let rankupMessage = await threadsData.get(threadID, "data.rankup.message");
-        if (!rankupMessage) {
-          rankupMessage = getLang("levelup");
+        let rankupMessage = getLang("levelup");
+        const storedMsg = await threadsData.get(threadID, "data.rankup.message");
+        if (storedMsg && storedMsg.includes("{name}")) {
+          rankupMessage = storedMsg;
         }
 
         rankupMessage = rankupMessage
-          .replace(/{name}/g, name)
+          .replace(/{name}/g, userName)
           .replace(/{level}/g, currentLevel)
-          .replace(/{userName}/g, name)
-          .replace(/{@name}/g, `@${name}`);
+          .replace(/{userName}/g, userName)
+          .replace(/{@name}/g, `@${userName}`);
 
         const form = {
           body: `${rankupMessage}\n${getLang("rankInfo").replace("{level}", String(currentLevel)).replace("{exp}", String(exp)).replace("{rank}", String(leaderboardRank))}`,
-          mentions: [{ tag: name, id: senderID }],
+          mentions: [{ tag: userName, id: senderID }],
         };
 
         try {
