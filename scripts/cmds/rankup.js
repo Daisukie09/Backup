@@ -45,7 +45,7 @@ module.exports = {
       on: "bật",
       off: "tắt",
       successText: "thành công thông báo rankup!",
-      levelup: "★★ Chúc mừng {name} đã đạt level {level}",
+      levelup: "★★ Chúc mừng {userName} đã đạt level {level}",
       statusOn: "Bật",
       statusOff: "Tắt",
       statusMsg: "📊 Trạng thái Rankup: {status}\nDùng: rankup [on/off/check]",
@@ -58,7 +58,7 @@ module.exports = {
       on: "on",
       off: "off",
       successText: "success notification rankup!",
-      levelup: "★★ Congratulations {name} on reaching level {level}!",
+      levelup: "★★ Congratulations {userName} on reaching level {level}!",
       statusOn: "On",
       statusOff: "Off",
       statusMsg: "📊 Rankup Status: {status}\nUse: rankup [on/off/check]",
@@ -95,7 +95,7 @@ module.exports = {
       } catch {}
 
       let rankupMessage = getLang("levelup")
-        .replace(/{name}/g, userName)
+        .replace(/{userName}/g, userName)
         .replace(/{level}/g, level || 1);
 
       const form = {
@@ -173,14 +173,13 @@ module.exports = {
 
         let rankupMessage = getLang("levelup");
         const storedMsg = await threadsData.get(threadID, "data.rankup.message");
-        if (storedMsg && storedMsg.includes("{name}")) {
+        if (storedMsg && storedMsg.includes("{userName}")) {
           rankupMessage = storedMsg;
         }
 
         rankupMessage = rankupMessage
-          .replace(/{name}/g, userName)
-          .replace(/{level}/g, currentLevel)
           .replace(/{userName}/g, userName)
+          .replace(/{level}/g, currentLevel)
           .replace(/{@name}/g, `@${userName}`);
 
         const form = {
