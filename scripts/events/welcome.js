@@ -6,115 +6,95 @@ const WELCOME_GIF_URL = "https://files.catbox.moe/sdf7f0.gif";
 let cachedGifBuffer = null;
 
 async function getGifBuffer() {
-	if (cachedGifBuffer) return cachedGifBuffer;
-	const response = await axios.get(WELCOME_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
-	cachedGifBuffer = Buffer.from(response.data);
-	console.log("[WELCOME] GIF cached successfully");
-	return cachedGifBuffer;
+  if (cachedGifBuffer) return cachedGifBuffer;
+  const response = await axios.get(WELCOME_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
+  cachedGifBuffer = Buffer.from(response.data);
+  console.log("[WELCOME] GIF cached successfully");
+  return cachedGifBuffer;
 }
 
 getGifBuffer().catch(e => console.error("[WELCOME] Failed to pre-cache GIF:", e.message));
 
 module.exports = {
-	config: {
-		name: "welcome",
-		version: "1.0",
-		author: "NTKhang",
-		category: "events"
-	},
+  config: {
+    name: "welcome",
+    version: "1.1",
+    author: "John Lester",
+    category: "events"
+  },
 
-	langs: {
-		vi: {
-			session1: "sáng",
-			session2: "trưa",
-			session3: "chiều",
-			session4: "tối",
-			defaultWelcomeMessage: "Chào mừng {userName} đến với {boxName}!"
-		},
-		en: {
-			session1: "morning",
-			session2: "noon",
-			session3: "afternoon",
-			session4: "evening",
-			defaultWelcomeMessage: "Welcome {userName} to {boxName}!"
-		}
-	},
+  langs: {
+    vi: {
+      singleWelcome: "👋 Chào mừng **{userName}** đến với nhóm!",
+      multiWelcome: "👋 Chào mừng đến với nhóm!\n\n{names}"
+    },
+    en: {
+      singleWelcome: "👋 Welcome to the group, **{userName}**!",
+      multiWelcome: "👋 Welcome to the group!\n\n{names}"
+    }
+  },
 
-	onStart: async ({ threadsData, message, event, api, usersData, getLang }) => {
-		if (event.logMessageType == "log:subscribe")
-			return async function () {
-				const { threadID } = event;
-				const threadData = await threadsData.get(threadID);
-				if (threadData.settings.sendWelcomeMessage === false)
-					return;
+  onStart: async ({ threadsData, message, event, api, usersData, getLang }) => {
+    if (event.logMessageType == "log:subscribe")
+      return async function () {
+        const { threadID } = event;
+        const threadData = await threadsData.get(threadID);
+        if (threadData.settings.sendWelcomeMessage === false) return;
 
-				const { addedParticipants } = event.logMessageData;
-				if (!addedParticipants || addedParticipants.length == 0)
-					return;
+        const logMessageData = event.logMessageData;
+        const added = logMessageData.addedParticipants;
+        if (!added || added.length === 0) return;
 
-				const hours = getTime("HH");
-				const threadName = threadData.threadName;
+        if (added.some(p => p.userFbId == api.getCurrentUserID())) return;
 
-				for (const participant of addedParticipants) {
-					if (participant.userFbId == api.getCurrentUserID())
-						continue;
+        const getName = (p) => p.fullName || p.firstName || `User ${p.userFbId}`;
 
-					const userName = participant.fullName || await usersData.getName(participant.userFbId);
+        let textMessage;
+        if (added.length === 1) {
+          textMessage = getLang("singleWelcome").replace("{userName}", getName(added[0]));
+        } else {
+          const names = added.map(p => `• **${getName(p)}**`).join("\n");
+          textMessage = getLang("multiWelcome").replace("{names}", names);
+        }
 
-					let { welcomeMessage = getLang("defaultWelcomeMessage") } = threadData.data;
+        const firstJoiner = added[0];
+        const firstId = firstJoiner.userFbId;
+        const userName = getName(firstJoiner);
 
-					welcomeMessage = welcomeMessage
-						.replace(/\{userName\}|\{userNameTag\}/g, userName)
-						.replace(/\{threadName\}|\{boxName\}/g, threadName)
-						.replace(/\{time\}/g, hours)
-						.replace(/\{session\}/g, hours <= 10 ?
-							getLang("session1") :
-							hours <= 12 ?
-								getLang("session2") :
-								hours <= 18 ?
-									getLang("session3") :
-									getLang("session4")
-						);
+        const threadName = threadData.threadName;
+        const memberCount = threadData.members.length;
 
-					const form = { body: welcomeMessage };
+        const form = { body: textMessage };
 
-					if (welcomeMessage.includes("{userNameTag}")) {
-						form.mentions = [{
-							id: participant.userFbId,
-							tag: userName
-						}];
-					}
+        try {
+          const buf = await getGifBuffer();
+          const stream = Readable.from(buf);
+          stream.path = "welcome.gif";
+          form.attachment = stream;
+        } catch (e) {
+          console.error("[WELCOME] Failed to fetch GIF:", e.message);
+        }
 
-					try {
-						const buf = await getGifBuffer();
-						const stream = Readable.from(buf);
-						stream.path = "welcome.gif";
-						form.attachment = stream;
-					} catch (e) {
-						console.error("[WELCOME] Failed to fetch GIF:", e.message);
-					}
+        if (threadData.data.welcomeAttachment) {
+          const files = threadData.data.welcomeAttachment;
+          const attachments = files.reduce((acc, file) => {
+            acc.push(drive.getFile(file, "stream"));
+            return acc;
+          }, []);
+          const customAttachments = (await Promise.allSettled(attachments))
+            .filter(({ status }) => status == "fulfilled")
+            .map(({ value }) => value);
 
-					if (threadData.data.welcomeAttachment) {
-						const files = threadData.data.welcomeAttachment;
-						const attachments = files.reduce((acc, file) => {
-							acc.push(drive.getFile(file, "stream"));
-							return acc;
-						}, []);
-						const customAttachments = (await Promise.allSettled(attachments))
-							.filter(({ status }) => status == "fulfilled")
-							.map(({ value }) => value);
+          if (customAttachments.length > 0) {
+            if (form.attachment) {
+              form.attachment = [form.attachment, ...customAttachments];
+            } else {
+              form.attachment = customAttachments;
+            }
+          }
+        }
 
-						if (customAttachments.length > 0) {
-							if (form.attachment) {
-								form.attachment = [form.attachment, ...customAttachments];
-							} else {
-								form.attachment = customAttachments;
-							}
-						}
-					}
-
-					message.send(form);
-				}
-			};
-	}
+        message.send(form);
+      };
+  }
 };
