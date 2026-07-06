@@ -88,7 +88,11 @@ module.exports = {
         if (pos !== -1) leaderboardRank = pos + 1;
       } catch {}
 
-      const userName = await usersData.getName(senderID) || "User";
+      let userName = "User";
+      try {
+        const info = await api.getUserInfo(senderID);
+        userName = info[senderID]?.name || "User";
+      } catch {}
 
       let rankupMessage = getLang("levelup")
         .replace(/{name}/g, userName)
@@ -151,15 +155,11 @@ module.exports = {
       const currentLevel = expToLevel(exp);
 
       if (currentLevel > prevLevel && currentLevel > 1) {
-        let userName = await usersData.getName(senderID);
-        if (!userName) {
-          try {
-            const info = await api.getUserInfo(senderID);
-            userName = info[senderID]?.name || "User";
-          } catch {
-            userName = "User";
-          }
-        }
+        let userName = "User";
+        try {
+          const info = await api.getUserInfo(senderID);
+          userName = info[senderID]?.name || "User";
+        } catch {}
 
         let leaderboardRank = 1;
         try {
