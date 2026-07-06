@@ -1,7 +1,7 @@
 module.exports = {
   config: {
     name: "goiadmin",
-    author: "?/zed",
+    author: "VincentSensei",
     role: 0,
     shortDescription: "",
     longDescription: "",
@@ -9,29 +9,30 @@ module.exports = {
     guide: "{pn}"
   },
 
-  onStart: async function ({ api, event }) {
-    const adminID = "61589047318104";
+  onChat: async function ({ message, event, api, commandName }) {
+    if (!event.mentions || Object.keys(event.mentions).length === 0) return;
 
-    if (event.senderID === adminID) return;
+    const adminIDs = global.GoatBot.config.adminBot || [];
+    const mentionedIds = Object.keys(event.mentions);
 
-    if (Object.keys(event.mentions).includes(adminID)) {
-      const msg = [
-        "Don't tag admin, he's busy 😗",
-        "Admin is currently unavailable 🤧",
-        "Sorry, admin is offline 😪",
-        "Do you like my admin? That's why you're tagging him? 😏",
-        "Tag my admin again and I'll punch you 🙂"
-      ];
+    if (!mentionedIds.some(id => adminIDs.includes(id))) return;
+    if (adminIDs.includes(event.senderID)) return;
 
-      api.setMessageReaction("😍", event.messageID, () => {}, true);
+    const msg = [
+      "Don't tag admin, he's busy 😗",
+      "Admin is currently unavailable 🤧",
+      "Sorry, admin is offline 😪",
+      "Do you like my admin? That's why you're tagging him? 😏",
+      "Tag my admin again and I'll punch you 🙂",
+      "Hey, let's not bring the admins into this… they're watching.",
+      "Careful. You just summoned an admin. I'd avoid that.",
+      "Oops, admin talk detected. Let's change the subject."
+    ];
 
-      return api.sendMessage(
-        {
-          body: msg[Math.floor(Math.random() * msg.length)]
-        },
-        event.threadID,
-        event.messageID
-      );
-    }
-  }
+    api.setMessageReaction("😍", event.messageID, () => {}, true);
+
+    return message.reply(msg[Math.floor(Math.random() * msg.length)]);
+  },
+
+  onStart: async function () {}
 };
