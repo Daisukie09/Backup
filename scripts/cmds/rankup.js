@@ -39,7 +39,7 @@ module.exports = {
       on: "on",
       off: "off",
       successText: "success notification rankup!",
-      levelup: "★★ Congratulations {name} your Keyboard Warrior has reaching level {level}!",
+      levelup: "★★ Congratulations {name} on reaching level {level}!",
     },
   },
 
@@ -106,7 +106,15 @@ module.exports = {
       const currentLevel = expToLevel(exp);
 
       if (currentLevel > prevLevel && currentLevel > 1) {
-        const name = (await usersData.getName(senderID)) || "User";
+        let name = await usersData.getName(senderID);
+        if (!name) {
+          try {
+            const info = await api.getUserInfo(senderID);
+            name = info[senderID]?.name || "User";
+          } catch {
+            name = "User";
+          }
+        }
 
         let rankupMessage = await threadsData.get(
           threadID,
@@ -119,7 +127,8 @@ module.exports = {
         rankupMessage = rankupMessage
           .replace(/{name}/g, name)
           .replace(/{level}/g, currentLevel)
-          .replace(/{userName}/g, name);
+          .replace(/{userName}/g, name)
+          .replace(/{@name}/g, `@${name}`);
 
         const form = {
           body: rankupMessage,
