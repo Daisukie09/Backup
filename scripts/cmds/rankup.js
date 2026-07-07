@@ -17,9 +17,13 @@ async function createRankupCard(avatarUrl, name, level, rank, totalExp) {
   const cardW = 800, cardH = 400;
   const avatarSize = 130;
 
-  const [avatarBuf] = await Promise.all([
-    axios.get(avatarUrl, { responseType: "arraybuffer", timeout: 15000 }).then(r => Buffer.from(r.data)).catch(() => null),
-  ]);
+  let avatarBuf = null;
+  if (avatarUrl && (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://"))) {
+    try {
+      const resp = await axios.get(avatarUrl, { responseType: "arraybuffer", timeout: 15000 });
+      avatarBuf = Buffer.from(resp.data);
+    } catch {}
+  }
 
   const bgSvg = Buffer.from(
     `<svg width="${cardW}" height="${cardH}">
@@ -152,9 +156,13 @@ module.exports = {
       let userName = "User";
       let avatarUrl = "";
       try {
-        const info = await api.getUserInfo(senderID);
-        userName = info[senderID]?.name || "User";
-        avatarUrl = info[senderID]?.thumbSrc || "";
+        avatarUrl = await usersData.getAvatarUrl(senderID);
+        const dbName = await usersData.getName(senderID);
+        if (dbName) userName = dbName;
+        else {
+          const info = await api.getUserInfo(senderID);
+          userName = info[senderID]?.name || "User";
+        }
       } catch {}
 
       try {
@@ -217,9 +225,13 @@ module.exports = {
         let userName = "User";
         let avatarUrl = "";
         try {
-          const info = await api.getUserInfo(senderID);
-          userName = info[senderID]?.name || "User";
-          avatarUrl = info[senderID]?.thumbSrc || "";
+          avatarUrl = await usersData.getAvatarUrl(senderID);
+          const dbName = await usersData.getName(senderID);
+          if (dbName) userName = dbName;
+          else {
+            const info = await api.getUserInfo(senderID);
+            userName = info[senderID]?.name || "User";
+          }
         } catch {}
 
         let leaderboardRank = 1;
