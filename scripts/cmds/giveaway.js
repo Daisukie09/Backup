@@ -34,18 +34,19 @@ module.exports = {
     name: "giveaway",
     aliases: ["ga"],
     version: "1.0.0",
-    role: 2,
-    author: "VincentSensei",
+    role: 0,
+    author: "John Lester",
     description: "Create and manage giveaways in the group.",
     category: "fun",
     usage: "create <prize> <duration> [winners]\nExample: !giveaway create Free Nitro 10m 2",
     countDown: 5,
   },
 
-  onStart: async function ({ api, message, event, args, commandName }) {
+  onStart: async function ({ api, message, event, args, commandName, role }) {
     const sub = (args[0] || "").toLowerCase();
 
     if (sub === "create") {
+      if (role < 2) return message.reply("❌ Only bot admins can create giveaways.");
       const prize = args.slice(1).filter(a => !a.match(/^\d+[smhd]$/) && !a.match(/^\d+$/)).join(" ");
       const durationStr = args.find(a => a.match(/^\d+[smhd]$/));
       const winnersCount = parseInt(args.find(a => a.match(/^\d+$/) && a !== args.find(x => x.match(/^\d+[smhd]$/)))) || 1;
@@ -126,6 +127,7 @@ module.exports = {
     }
 
     if (sub === "end") {
+      if (role < 2) return message.reply("❌ Only bot admins can end giveaways.");
       const replyMsg = event.messageReply;
       if (!replyMsg || !activeGiveaways.has(replyMsg.messageID)) {
         return message.reply("❌ Reply to an active giveaway message to end it early.");
@@ -162,6 +164,7 @@ module.exports = {
     }
 
     if (sub === "reroll") {
+      if (role < 2) return message.reply("❌ Only bot admins can reroll giveaways.");
       const replyMsg = event.messageReply;
       if (!replyMsg) return message.reply("❌ Reply to a ended giveaway message to reroll.");
       const data = activeGiveaways.get(replyMsg.messageID);
