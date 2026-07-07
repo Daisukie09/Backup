@@ -1,18 +1,5 @@
 const axios = require("axios");
-const { Readable } = require("stream");
-
-const RANKUP_GIF_URL = "https://images2.imgbox.com/6c/dd/nBFk2PuX_o.gif";
-let cachedGifBuffer = null;
-
-async function getGifBuffer() {
-  if (cachedGifBuffer) return cachedGifBuffer;
-  const response = await axios.get(RANKUP_GIF_URL, { responseType: "arraybuffer", timeout: 30000 });
-  cachedGifBuffer = Buffer.from(response.data);
-  console.log("[RANKUP] GIF cached successfully");
-  return cachedGifBuffer;
-}
-
-getGifBuffer().catch(e => console.error("[RANKUP] Failed to pre-cache GIF:", e.message));
+const sharp = require("sharp");
 
 const DELTA_NEXT = 5;
 
@@ -26,10 +13,90 @@ function levelToExp(level) {
   return Math.floor(((level * level - level) * DELTA_NEXT) / 2);
 }
 
+async function createRankupCard(avatarUrl, name, level, rank, totalExp) {
+  const cardW = 800, cardH = 400;
+  const avatarSize = 130;
+
+  const [avatarBuf] = await Promise.all([
+    axios.get(avatarUrl, { responseType: "arraybuffer", timeout: 15000 }).then(r => Buffer.from(r.data)).catch(() => null),
+  ]);
+
+  const bgSvg = Buffer.from(
+    `<svg width="${cardW}" height="${cardH}">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#ff6b6b"/>
+          <stop offset="50%" stop-color="#ee5a24"/>
+          <stop offset="100%" stop-color="#f0932b"/>
+        </linearGradient>
+        <linearGradient id="header" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
+          <stop offset="50%" stop-color="rgba(255,255,255,0.25)"/>
+          <stop offset="100%" stop-color="rgba(255,255,255,0.15)"/>
+        </linearGradient>
+      </defs>
+      <rect width="${cardW}" height="${cardH}" fill="url(#bg)" rx="24"/>
+      <rect x="10" y="10" width="${cardW - 20}" height="60" fill="url(#header)" rx="16"/>
+      <path d="M 0 60 Q ${cardW / 4} 90 ${cardW / 2} 60 T ${cardW} 60 L ${cardW} 0 L 0 0 Z" fill="rgba(255,255,255,0.05)"/>
+      <path d="M 0 70 Q ${cardW / 2} 30 ${cardW} 70" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+      <circle cx="50" cy="${cardH - 50}" r="30" fill="rgba(255,255,255,0.05)"/>
+      <circle cx="${cardW - 40}" cy="50" r="20" fill="rgba(255,255,255,0.08)"/>
+      <circle cx="${cardW - 30}" cy="40" r="8" fill="rgba(255,255,255,0.15)"/>
+      <circle cx="30" cy="30" r="5" fill="rgba(255,255,255,0.2)"/>
+    </svg>`
+  );
+
+  let composite = [];
+
+  if (avatarBuf) {
+    const circleMask = Buffer.from(
+      `<svg width="${avatarSize}" height="${avatarSize}"><circle cx="${avatarSize / 2}" cy="${avatarSize / 2}" r="${avatarSize / 2}" fill="white"/></svg>`
+    );
+    const avatarCirc = await sharp(avatarBuf)
+      .resize(avatarSize, avatarSize, { fit: 'cover' })
+      .composite([{ input: circleMask, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+
+    const borderRing = Buffer.from(
+      `<svg width="${avatarSize + 10}" height="${avatarSize + 10}">
+        <circle cx="${(avatarSize + 10) / 2}" cy="${(avatarSize + 10) / 2}" r="${avatarSize / 2 + 3}" fill="none" stroke="#fff" stroke-width="4"/>
+        <circle cx="${(avatarSize + 10) / 2}" cy="${(avatarSize + 10) / 2}" r="${avatarSize / 2 + 5}" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+      </svg>`
+    );
+
+    composite.push(
+      { input: avatarCirc, top: 75, left: 45 },
+      { input: borderRing, top: 71, left: 41 }
+    );
+  }
+
+  const textSvg = Buffer.from(
+    `<svg width="${cardW}" height="${cardH}">
+      <text x="${cardW / 2}" y="48" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" fill="#fff" font-weight="bold" text-anchor="middle" letter-spacing="3">⚡ LEVEL UP! ⚡</text>
+      <text x="205" y="130" font-family="'Trebuchet MS', Arial, sans-serif" font-size="32" fill="#fff" font-weight="bold">${escapeXml(name)}</text>
+      <text x="205" y="245" font-family="'Trebuchet MS', Arial, sans-serif" font-size="80" fill="#fff" font-weight="bold">${level}</text>
+      <text x="295" y="200" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.7)">LV</text>
+      <rect x="190" y="275" width="240" height="50" rx="12" fill="rgba(0,0,0,0.2)"/>
+      <text x="205" y="307" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)">Rank ${rank}</text>
+      <text x="310" y="307" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)">EXP ${totalExp}</text>
+      <line x1="295" y1="276" x2="295" y2="324" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+    </svg>`
+  );
+
+  composite.push({ input: textSvg, top: 0, left: 0 });
+
+  return sharp(bgSvg).composite(composite).png().toBuffer();
+}
+
+function escapeXml(str) {
+  return String(str).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
+}
+
 module.exports = {
   config: {
     name: "rankup",
-    version: "1.2.0",
+    version: "1.4.0",
     author: "John Lester",
     description: {
       vi: "Thông báo rankup cho từng nhóm",
@@ -49,10 +116,7 @@ module.exports = {
       statusOn: "Bật",
       statusOff: "Tắt",
       statusMsg: "📊 Trạng thái Rankup: {status}\nDùng: rankup [on/off/check]",
-      checkTitle: "🃏 Xem trước thẻ rank",
-      checkExp: "⭐ Cấp **{level}** — {exp} tổng EXP",
-      myLevelBtn: "📊 Cấp của tôi",
-      rankInfo: "⭐ **Cấp {level}** — {exp} tổng EXP (Hạng #{rank})",
+      checkTitle: "🃏 Rankup Card",
     },
     en: {
       on: "on",
@@ -62,10 +126,7 @@ module.exports = {
       statusOn: "On",
       statusOff: "Off",
       statusMsg: "📊 Rankup Status: {status}\nUse: rankup [on/off/check]",
-      checkTitle: "🃏 Rank Card Preview",
-      checkExp: "⭐ **Level {level}** — {exp} total EXP",
-      myLevelBtn: "📊 My Level",
-      rankInfo: "⭐ **Level {level}** — {exp} total EXP (Rank #{rank})",
+      checkTitle: "🃏 Rankup Card",
     },
   },
 
@@ -89,39 +150,37 @@ module.exports = {
       } catch {}
 
       let userName = "User";
+      let avatarUrl = "";
       try {
         const info = await api.getUserInfo(senderID);
         userName = info[senderID]?.name || "User";
+        avatarUrl = info[senderID]?.thumbSrc || "";
       } catch {}
 
-      let rankupMessage = getLang("levelup")
-        .replace(/{userName}/g, userName)
-        .replace(/{level}/g, level || 1);
-
-      const form = {
-        body: `${getLang("checkTitle")}\n${rankupMessage}\n${getLang("rankInfo").replace("{level}", String(level || 1)).replace("{exp}", String(exp || 0)).replace("{rank}", String(leaderboardRank))}`,
-        mentions: [{ tag: userName, id: senderID }],
-      };
-
       try {
-        const buf = await getGifBuffer();
-        const stream = Readable.from(buf);
-        stream.path = "rankup.gif";
-        form.attachment = stream;
+        const cardBuf = await createRankupCard(avatarUrl, userName, level || 1, `#${leaderboardRank}`, exp);
+        const { Readable } = require("stream");
+        const stream = Readable.from(cardBuf);
+        stream.path = "rankup.png";
+        return message.send({
+          body: `${getLang("checkTitle")}\n${getLang("levelup").replace(/{userName}/g, userName).replace(/{level}/g, level || 1)}`,
+          attachment: stream,
+          mentions: [{ tag: userName, id: senderID }],
+        });
       } catch (e) {
-        console.error("[RANKUP] Failed to fetch GIF:", e.message);
+        console.error("[RANKUP] Card generation failed:", e.message);
+        return message.send({
+          body: `${getLang("checkTitle")}\n${getLang("levelup").replace(/{userName}/g, userName).replace(/{level}/g, level || 1)}\n⭐ **Level ${level || 1}** — ${exp} total EXP (Rank #${leaderboardRank})`,
+          mentions: [{ tag: userName, id: senderID }],
+        });
       }
-
-      return message.send(form);
     }
 
     if (sub === "on" || sub === "off") {
       const isOn = sub === "on";
       await threadsData.set(threadID, isOn, "settings.rankupEnabled");
-
       const defaultMsg = getLang("levelup");
       await threadsData.set(threadID, defaultMsg, "data.rankup.message");
-
       return api.sendMessage(
         `${isOn ? getLang("on") : getLang("off")} ${getLang("successText")}`,
         threadID,
@@ -156,9 +215,11 @@ module.exports = {
 
       if (currentLevel > prevLevel && currentLevel > 1) {
         let userName = "User";
+        let avatarUrl = "";
         try {
           const info = await api.getUserInfo(senderID);
           userName = info[senderID]?.name || "User";
+          avatarUrl = info[senderID]?.thumbSrc || "";
         } catch {}
 
         let leaderboardRank = 1;
@@ -182,21 +243,24 @@ module.exports = {
           .replace(/{level}/g, currentLevel)
           .replace(/{@name}/g, `@${userName}`);
 
-        const form = {
-          body: `${rankupMessage}\n${getLang("rankInfo").replace("{level}", String(currentLevel)).replace("{exp}", String(exp)).replace("{rank}", String(leaderboardRank))}`,
-          mentions: [{ tag: userName, id: senderID }],
-        };
-
         try {
-          const buf = await getGifBuffer();
-          const stream = Readable.from(buf);
-          stream.path = "rankup.gif";
-          form.attachment = stream;
+          const cardBuf = await createRankupCard(avatarUrl, userName, currentLevel, `#${leaderboardRank}`, exp);
+          const { Readable } = require("stream");
+          const stream = Readable.from(cardBuf);
+          stream.path = "rankup.png";
+          await message.send({
+            body: rankupMessage,
+            attachment: stream,
+            mentions: [{ tag: userName, id: senderID }],
+          });
         } catch (e) {
-          console.error("[RANKUP] Failed to fetch GIF:", e.message);
+          console.error("[RANKUP] Card generation failed:", e.message);
+          const form = {
+            body: `${rankupMessage}\n⭐ **Level ${currentLevel}** — ${exp} total EXP (Rank #${leaderboardRank})`,
+            mentions: [{ tag: userName, id: senderID }],
+          };
+          await message.send(form);
         }
-
-        await message.send(form);
       }
     } catch (e) {
       console.error("[RANKUP] Error:", e.message);
