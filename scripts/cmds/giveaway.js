@@ -110,7 +110,6 @@ module.exports = {
             );
           }
 
-          activeGiveaways.delete(giveawayId);
         }, durationMs)
       };
 
@@ -159,7 +158,6 @@ module.exports = {
         );
       }
 
-      activeGiveaways.delete(replyMsg.messageID);
       return message.reply("✅ Giveaway ended.");
     }
 
