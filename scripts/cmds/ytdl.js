@@ -2,11 +2,9 @@ const axios = require("axios");
 const fs = require("fs-extra");
 const os = require("os");
 const path = require("path");
-const { pipeline } = require("stream/promises");
 const ytSearch = require("yt-search");
 
 const RAPIDAPI_KEY = "f5a15718e2msha1be8bbea46f76ep146606jsn8faef601eed8";
-const RAPIDAPI_HOST = "ytdl-api.p.rapidapi.com";
 
 function extractVideoId(url) {
   try {
@@ -25,19 +23,6 @@ function cleanUrl(url) {
   return url;
 }
 
-async function getDownloadUrl(videoUrl) {
-  const res = await axios.get(`https://${RAPIDAPI_HOST}/youtubedownloader2`, {
-    params: { url: videoUrl },
-    headers: {
-      "X-Rapidapi-Key": RAPIDAPI_KEY,
-      "X-Rapidapi-Host": RAPIDAPI_HOST,
-      "Content-Type": "application/json",
-    },
-    timeout: 30000,
-  });
-  return res.data;
-}
-
 module.exports = {
   config: {
     name: "ytdl",
@@ -45,10 +30,10 @@ module.exports = {
     author: "Vincent Magtolis",
     countDown: 5,
     role: 0,
-    shortDescription: { en: "Download YouTube video" },
-    longDescription: { en: "Download YouTube video or audio via RapidAPI" },
+    shortDescription: { en: "Download YouTube audio" },
+    longDescription: { en: "Search and download YouTube audio as MP3" },
     category: "media",
-    guide: { en: "{pn} <title> - Search and download\n{pn} <url> - Download video" },
+    guide: { en: "{pn} <title or URL>" },
   },
 
   onStart: async function ({ message, args, event }) {
@@ -76,34 +61,47 @@ module.exports = {
 
       const parts = topResult.timestamp.split(":").map(Number);
       const duration = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
-      if (duration > 600) { await message.reply("⚠️ Only videos under 10 minutes are supported."); return; }
+      if (duration > 600) { await message.reply("⚠️ Only videos under 10 minutes."); return; }
 
       await message.unsend(processingMsg.messageID);
       await message.reaction("⏳", event.messageID);
 
-      const data = await getDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`);
+      const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
+      const conv = await axios.get(apiUrl, {
+        headers: {
+          "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
+          "x-rapidapi-key": RAPIDAPI_KEY,
+        },
+        timeout: 30000,
+      });
 
-      if (!data?.download_url && !data?.link && !data?.url) {
+      if (conv.data?.status !== "ok" || !conv.data?.link) {
         message.reaction("❌", event.messageID);
-        await message.reply("❌ Failed to get download link.");
+        await message.reply("❌ Failed to convert. The video may be restricted.");
         return;
       }
 
-      const dlUrl = data.download_url || data.link || data.url;
-      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.mp4`);
-
-      const fileRes = await axios.get(dlUrl, {
+      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.mp3`);
+      const dl = await axios.get(conv.data.link, {
         responseType: "stream",
         timeout: 120000,
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
       });
 
-      await pipeline(fileRes.data, fs.createWriteStream(tmpFile));
+      await new Promise((resolve, reject) => {
+        const w = fs.createWriteStream(tmpFile);
+        dl.data.pipe(w);
+        w.on("finish", resolve);
+        w.on("error", reject);
+      });
+
       message.reaction("✅", event.messageID);
 
-      const info = `🎬 𝐘𝐎𝐔𝐓𝐔𝐁𝐄 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃\n\n📌 Title: ${topResult.title}\n⏱️ Duration: ${topResult.timestamp}\n📺 Channel: ${topResult.author.name}`;
+      await message.reply({
+        body: `🎬 ${topResult.title}\n⏱️ ${topResult.timestamp}  |  📺 ${topResult.author.name}`,
+        attachment: fs.createReadStream(tmpFile),
+      });
 
-      await message.reply({ body: info, attachment: fs.createReadStream(tmpFile) });
       fs.unlink(tmpFile).catch(() => {});
     } catch (error) {
       console.error("[YTDL] Error:", error.message);
