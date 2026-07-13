@@ -1,88 +1,85 @@
-const axios = require("axios");
 const fs = require("fs-extra");
 const os = require("os");
 const path = require("path");
-const ytSearch = require("yt-search");
-
-const RAPIDAPI_KEY = "f5a15718e2msha1be8bbea46f76ep146606jsn8faef601eed8";
-
-function extractVideoId(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname === "youtu.be") return u.pathname.slice(1);
-    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
-    return null;
-  } catch { return null; }
-}
-
-function cleanUrl(url) {
-  const s = url.match(/youtube\.com\/shorts\/([\w-]+)/);
-  if (s) return `https://www.youtube.com/watch?v=${s[1]}`;
-  const id = extractVideoId(url);
-  if (id) return `https://www.youtube.com/watch?v=${id}`;
-  return url;
-}
+const axios = require("axios");
+const ytdl = require("shadowx-ytdl");
 
 module.exports = {
   config: {
     name: "ytdl",
-    version: "2.0.0",
+    version: "3.0.0",
     author: "Vincent Magtolis",
     countDown: 5,
     role: 0,
-    shortDescription: { en: "Download YouTube audio" },
-    longDescription: { en: "Search and download YouTube audio as MP3" },
+    shortDescription: { en: "Download YouTube video/audio" },
+    longDescription: { en: "Search and download YouTube videos as MP4 or audio as MP3" },
     category: "media",
-    guide: { en: "{pn} <title or URL>" },
+    guide: { en: "{pn} <title or URL> | {pn} <title or URL> -mp3 | {pn} <title or URL> -mp4 -quality 720" },
   },
 
   onStart: async function ({ message, args, event }) {
-    let videoId, topResult;
-    const processingMsg = await message.reply("🔍 Searching...");
-
     try {
-      const isUrl = /^https?:\/\//.test(args[0]);
+      let format = "mp4";
+      let quality = 1080;
+      const queryParts = [];
 
-      if (isUrl) {
-        const cleanInputUrl = cleanUrl(args[0]);
-        videoId = extractVideoId(cleanInputUrl);
-        if (!videoId) { await message.reply("❌ Invalid YouTube URL."); return; }
-        const results = await ytSearch(videoId);
-        if (!results?.videos?.length) { await message.reply("❌ No results found."); return; }
-        topResult = results.videos[0];
-      } else {
-        const query = args.join(" ");
-        if (!query) { await message.reply("❌ Enter a title or YouTube URL."); return; }
-        const results = await ytSearch(query);
-        if (!results?.videos?.length) { await message.reply("❌ No results found."); return; }
-        topResult = results.videos[0];
-        videoId = topResult.videoId;
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "-mp3") { format = "mp3"; }
+        else if (args[i] === "-mp4") { format = "mp4"; }
+        else if (args[i] === "-quality" && args[i + 1]) { quality = parseInt(args[i + 1]); i++; }
+        else { queryParts.push(args[i]); }
       }
 
-      const parts = topResult.timestamp.split(":").map(Number);
-      const duration = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
-      if (duration > 600) { await message.reply("⚠️ Only videos under 10 minutes."); return; }
+      const query = queryParts.join(" ");
+      if (!query) return message.reply("❌ Enter a title or YouTube URL.");
+
+      const processingMsg = await message.reply("🔍 Searching...");
+
+      let videoUrl;
+      if (/^https?:\/\//.test(query)) {
+        videoUrl = query;
+      } else {
+        const search = await ytdl.searchYouTube(query);
+        if (!search?.results?.length) {
+          await message.unsend(processingMsg.messageID);
+          return message.reply("❌ No results found.");
+        }
+        videoUrl = search.results[0].url;
+      }
+
+      const meta = await ytdl.getVideoMetadata(videoUrl);
+      if (!meta?.status) {
+        await message.unsend(processingMsg.messageID);
+        return message.reply("❌ Failed to get video info.");
+      }
+
+      const title = meta.title || "Unknown";
+      const durationSec = meta.duration || 0;
+      if (durationSec > 600) {
+        await message.unsend(processingMsg.messageID);
+        return message.reply("⚠️ Only videos under 10 minutes.");
+      }
 
       await message.unsend(processingMsg.messageID);
       await message.reaction("⏳", event.messageID);
 
-      const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
-      const conv = await axios.get(apiUrl, {
-        headers: {
-          "x-rapidapi-host": "youtube-mp36.p.rapidapi.com",
-          "x-rapidapi-key": RAPIDAPI_KEY,
-        },
-        timeout: 30000,
-      });
-
-      if (conv.data?.status !== "ok" || !conv.data?.link) {
-        message.reaction("❌", event.messageID);
-        await message.reply("❌ Failed to convert. The video may be restricted.");
-        return;
+      let result;
+      if (format === "mp3") {
+        const qual = [92, 128, 256, 320].includes(quality) ? quality : 320;
+        result = await ytdl.downloadAudio(videoUrl, qual);
+      } else {
+        const qual = [144, 360, 480, 720, 1080].includes(quality) ? quality : 1080;
+        result = await ytdl.downloadVideo(videoUrl, qual);
       }
 
-      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.mp3`);
-      const dl = await axios.get(conv.data.link, {
+      if (!result?.status || !result?.download?.downloadUrl) {
+        message.reaction("❌", event.messageID);
+        return message.reply("❌ Failed to get download link.");
+      }
+
+      const ext = format === "mp3" ? "mp3" : "mp4";
+      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.${ext}`);
+      const dl = await axios.get(result.download.downloadUrl, {
         responseType: "stream",
         timeout: 120000,
         headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
@@ -98,7 +95,7 @@ module.exports = {
       message.reaction("✅", event.messageID);
 
       await message.reply({
-        body: `🎬 ${topResult.title}\n⏱️ ${topResult.timestamp}  |  📺 ${topResult.author.name}`,
+        body: `🎬 ${title}\n📺 ${meta.channelTitle || meta.author || "Unknown"}\n💾 ${result.download.filename || ""}`,
         attachment: fs.createReadStream(tmpFile),
       });
 
@@ -107,8 +104,6 @@ module.exports = {
       console.error("[YTDL] Error:", error.message);
       message.reaction("❌", event.messageID);
       await message.reply(`❌ Error: ${error.message}`);
-    } finally {
-      try { await message.unsend(processingMsg.messageID); } catch {}
     }
   },
 };
