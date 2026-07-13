@@ -74,6 +74,20 @@ const TOOLS = [
       parameters: { type: "object", properties: {}, required: [] },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "simisimi",
+      description: "Peek at a Facebook user's info — returns their name, profile URL, and avatar. Use when the user asks about someone, says 'simisimi', 'snoop', 'stalk', 'peek', 'sumisilip', or wants to know about a person.",
+      parameters: {
+        type: "object",
+        properties: {
+          uid: { type: "string", description: "Facebook user ID to look up. If not provided, looks up the current user." },
+        },
+        required: [],
+      },
+    },
+  },
 ];
 
 async function executeToolCall(toolCall, api, senderID) {
@@ -127,6 +141,21 @@ async function executeToolCall(toolCall, api, senderID) {
         return JSON.stringify({ fact: res.data.text });
       } catch {
         return JSON.stringify({ fact: "Honey never spoils. Archaeologists found 3000-year-old honey in Egyptian tombs that was still edible." });
+      }
+    }
+    case "simisimi": {
+      const uid = parsed.uid || senderID;
+      if (!uid) return JSON.stringify({ error: "No UID available" });
+      try {
+        const info = await api.getUserInfo(uid);
+        const u = info[uid];
+        if (u) {
+          const avatarUrl = `https://graph.facebook.com/${uid}/picture?width=720&height=720&access_token=6628568379%7Cc1e620fa708a1d5696fb991c1bde5662`;
+          return JSON.stringify({ name: u.name, uid, profileUrl: `https://facebook.com/${uid}`, avatar: avatarUrl });
+        }
+        return JSON.stringify({ error: "User not found" });
+      } catch {
+        return JSON.stringify({ error: "Failed to fetch user info" });
       }
     }
     default:
