@@ -47,18 +47,18 @@ const TOOLS = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "get_user_info",
-      description: "Get Facebook user info (name, profile URL) by user ID. Only use if the user explicitly gives you a numeric Facebook user ID.",
-      parameters: {
-        type: "object",
-        properties: { uid: { type: "string", description: "Facebook user ID" } },
-        required: ["uid"],
+    {
+      type: "function",
+      function: {
+        name: "get_user_info",
+        description: "Get Facebook user info (name, profile URL, avatar) by user ID. If no UID is provided, looks up the current user. Use this when the user asks 'who am I', 'sino ako', 'sino bako', or any variation in any language.",
+        parameters: {
+          type: "object",
+          properties: { uid: { type: "string", description: "Facebook user ID (optional — leave empty for current user)" } },
+          required: [],
+        },
       },
     },
-  },
   {
     type: "function",
     function: {
@@ -69,7 +69,7 @@ const TOOLS = [
   },
 ];
 
-async function executeToolCall(toolCall, api) {
+async function executeToolCall(toolCall, api, senderID) {
   const { name, arguments: args } = toolCall.function;
   let parsed;
   try { parsed = JSON.parse(args); } catch { parsed = {}; }
@@ -103,8 +103,8 @@ async function executeToolCall(toolCall, api) {
       return JSON.stringify({ min, max, result });
     }
     case "get_user_info": {
-      const uid = parsed.uid;
-      if (!uid) return JSON.stringify({ error: "No UID provided" });
+      const uid = parsed.uid || senderID;
+      if (!uid) return JSON.stringify({ error: "No UID available" });
       try {
         const info = await api.getUserInfo(uid);
         const u = info[uid];
@@ -215,7 +215,7 @@ async function handleAI({ message, event, api, commandName, prompt, replyContext
     messages = existing ? [...existing] : [];
   }
 
-  const systemMsg = { role: "system", content: `${SYSTEM_PROMPT}\nThe current user's name is ${userName}.` };
+  const systemMsg = { role: "system", content: `${SYSTEM_PROMPT}\nThe current user's name is ${userName} (UID: ${senderID}).` };
   messages.unshift(systemMsg);
 
   if (messages.length > 0 && messages[messages.length - 1]?.role !== "user") {
@@ -253,7 +253,7 @@ async function handleAI({ message, event, api, commandName, prompt, replyContext
     if (msg?.tool_calls && msg.tool_calls.length > 0) {
       sendPayload.push(msg);
       for (const tc of msg.tool_calls) {
-        const result = await executeToolCall(tc, api);
+        const result = await executeToolCall(tc, api, senderID);
         sendPayload.push({ role: "tool", tool_call_id: tc.id, content: result });
       }
       sendPayload.push(systemMsg);
