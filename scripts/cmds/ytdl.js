@@ -5,8 +5,6 @@ const axios = require("axios");
 const ytSearch = require("yt-search");
 const sytdl = require("shadowx-ytdl");
 
-const RAPIDAPI_KEY = "f5a15718e2msha1be8bbea46f76ep146606jsn8faef601eed8";
-
 function extractVideoId(url) {
   try {
     const u = new URL(url);
@@ -24,110 +22,65 @@ function cleanUrl(url) {
   return url;
 }
 
-async function downloadViaRapidApi(videoId, quality) {
-  const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
-  const conv = await axios.get(apiUrl, {
-    headers: { "x-rapidapi-host": "youtube-mp36.p.rapidapi.com", "x-rapidapi-key": RAPIDAPI_KEY },
-    timeout: 30000,
-  });
-  if (conv.data?.status !== "ok" || !conv.data?.link) return null;
-  const qualStr = `${quality}kbps`;
-  return {
-    downloadUrl: conv.data.link,
-    filename: `${conv.data.title || "audio"} (${qualStr}).mp3`,
-    title: conv.data.title || "Audio",
-  };
-}
-
 module.exports = {
   config: {
     name: "ytdl",
-    version: "3.2.0",
+    version: "4.0.0",
     author: "Vincent Magtolis",
     countDown: 5,
     role: 0,
-    shortDescription: { en: "Download YouTube video/audio" },
-    longDescription: { en: "Search and download YouTube videos as MP4 or audio as MP3" },
+    shortDescription: { en: "Download YouTube video as MP4" },
+    longDescription: { en: "Search and download YouTube videos in HD MP4 format" },
     category: "media",
-    guide: { en: "{pn} <title or URL> | {pn} <title or URL> -mp3 | {pn} <title or URL> -mp4 -quality 720" },
+    guide: { en: "{pn} <title or URL>" },
   },
 
   onStart: async function ({ message, args, event }) {
     try {
-      let format = "mp4";
-      let quality = 1080;
-      const queryParts = [];
-
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === "-mp3") format = "mp3";
-        else if (args[i] === "-mp4") format = "mp4";
-        else if (args[i] === "-quality" && args[i + 1]) { quality = parseInt(args[i + 1]); i++; }
-        else queryParts.push(args[i]);
-      }
-
-      const query = queryParts.join(" ");
+      const query = args.join(" ");
       if (!query) return message.reply("❌ Enter a title or YouTube URL.");
 
       const processingMsg = await message.reply("🔍 Searching...");
 
-      let videoUrl, videoId;
+      let videoUrl;
       if (/^https?:\/\//.test(query)) {
         videoUrl = cleanUrl(query);
-        videoId = extractVideoId(videoUrl);
+        if (!extractVideoId(videoUrl)) {
+          await message.unsend(processingMsg.messageID);
+          return message.reply("❌ Invalid YouTube URL.");
+        }
       } else {
         const results = await ytSearch(query);
         if (!results?.videos?.length) {
           await message.unsend(processingMsg.messageID);
           return message.reply("❌ No results found.");
         }
-        const top = results.videos[0];
-        videoUrl = top.url;
-        videoId = top.videoId;
-      }
-
-      if (!videoId) {
-        await message.unsend(processingMsg.messageID);
-        return message.reply("❌ Invalid YouTube URL.");
+        videoUrl = results.videos[0].url;
       }
 
       await message.unsend(processingMsg.messageID);
       await message.reaction("⏳", event.messageID);
 
-      let downloadInfo = null;
-
-      // Try shadowx-ytdl first (best for MP4)
-      const qualMP4 = [144, 360, 480, 720, 1080].includes(quality) ? quality : 1080;
-      const qualMP3 = [92, 128, 256, 320].includes(quality) ? quality : 320;
-
-      if (format === "mp4") {
-        const result = await sytdl.downloadVideo(videoUrl, qualMP4);
+      const qualities = [1080, 720, 480, 360];
+      let result, dlUrl;
+      for (const q of qualities) {
+        result = await sytdl.downloadVideo(videoUrl, q);
         if (result?.status && result?.download?.downloadUrl) {
-          downloadInfo = { downloadUrl: result.download.downloadUrl, filename: result.download.filename, title: result.download.filename };
-        }
-      } else {
-        // Try shadowx first for MP3 too
-        const result = await sytdl.downloadAudio(videoUrl, qualMP3);
-        if (result?.status && result?.download?.downloadUrl) {
-          downloadInfo = { downloadUrl: result.download.downloadUrl, filename: result.download.filename, title: result.download.filename };
-        }
-        // Fallback to RapidAPI MP3
-        if (!downloadInfo) {
-          const fallback = await downloadViaRapidApi(videoId, qualMP3);
-          if (fallback) downloadInfo = fallback;
+          dlUrl = result.download.downloadUrl;
+          break;
         }
       }
-
-      if (!downloadInfo) {
+      if (!dlUrl) {
         message.reaction("❌", event.messageID);
-        return message.reply("❌ Failed to get download link. The download service may be blocked on this server.");
+        return message.reply("❌ Failed to get download link.");
       }
 
-      const ext = format === "mp3" ? "mp3" : "mp4";
-      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.${ext}`);
-      const dl = await axios.get(downloadInfo.downloadUrl, {
+      const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.mp4`);
+      const dl = await axios.get(dlUrl, {
         responseType: "stream",
         timeout: 120000,
         headers: { "User-Agent": "Mozilla/5.0" },
+        validateStatus: s => s === 200,
       });
 
       await new Promise((resolve, reject) => {
@@ -137,12 +90,31 @@ module.exports = {
         w.on("error", reject);
       });
 
+      const stat = fs.statSync(tmpFile);
+      if (stat.size < 1024) {
+        fs.unlink(tmpFile).catch(() => {});
+        message.reaction("❌", event.messageID);
+        return message.reply("❌ Downloaded file is empty or invalid.");
+      }
+
       message.reaction("✅", event.messageID);
 
-      await message.reply({
-        body: `🎬 ${downloadInfo.title || "Video"}`,
-        attachment: fs.createReadStream(tmpFile),
-      });
+      const filename = result.download.filename || "Video.mp4";
+      if (stat.size > 25 * 1024 * 1024) {
+        fs.unlink(tmpFile).catch(() => {});
+        return message.reply(`🎬 ${filename}\n📥 Download (too large for direct send): ${dlUrl}`);
+      }
+
+      try {
+        await message.reply({
+          body: `🎬 ${filename}`,
+          attachment: fs.createReadStream(tmpFile),
+        });
+      } catch (sendErr) {
+        console.error("[YTDL] Send error:", sendErr.message);
+        fs.unlink(tmpFile).catch(() => {});
+        return message.reply(`🎬 ${filename}\n📥 Direct download: ${dlUrl}`);
+      }
 
       fs.unlink(tmpFile).catch(() => {});
     } catch (error) {
