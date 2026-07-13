@@ -1,5 +1,6 @@
 const axios = require("axios");
 const Shoti = require("shoti");
+const { ttdl } = require("ab-downloader");
 
 const SENDER_CD = new Map();
 const CD_SECONDS = 15;
@@ -17,7 +18,7 @@ function getClient() {
 module.exports = {
   config: {
     name: "shoti",
-    version: "1.0.0",
+    version: "1.1.0",
     author: "VincentSensei",
     description: "Send a random TikTok video",
     category: "media",
@@ -60,13 +61,25 @@ module.exports = {
 
       await message.unsend(spin.messageID);
 
-      const resp = await axios.get(videoUrl, {
+      const itemId = videoUrl.match(/item_id=(\d+)/);
+      let downloadUrl = videoUrl;
+
+      if (itemId) {
+        const tiktokUrl = `https://www.tiktok.com/@${username}/video/${itemId[1]}`;
+        try {
+          const ttdlResult = await ttdl(tiktokUrl);
+          if (ttdlResult?.video?.[0]) {
+            downloadUrl = ttdlResult.video[0];
+          }
+        } catch {}
+      }
+
+      const resp = await axios.get(downloadUrl, {
         responseType: "stream",
         timeout: 60000,
         headers: {
-          "User-Agent": "Mozilla/5.0 (Linux; Android 12; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+          "User-Agent": "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
           Referer: "https://www.tiktok.com/",
-          Origin: "https://www.tiktok.com",
         },
       });
       resp.data.path = "shoti_video.mp4";
