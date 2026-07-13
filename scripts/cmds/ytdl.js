@@ -2,12 +2,47 @@ const fs = require("fs-extra");
 const os = require("os");
 const path = require("path");
 const axios = require("axios");
-const ytdl = require("shadowx-ytdl");
+const ytSearch = require("yt-search");
+const sytdl = require("shadowx-ytdl");
+
+const RAPIDAPI_KEY = "f5a15718e2msha1be8bbea46f76ep146606jsn8faef601eed8";
+
+function extractVideoId(url) {
+  try {
+    const u = new URL(url);
+    if (u.hostname === "youtu.be") return u.pathname.slice(1);
+    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
+  } catch {}
+  return null;
+}
+
+function cleanUrl(url) {
+  const s = url.match(/youtube\.com\/shorts\/([\w-]+)/);
+  if (s) return `https://www.youtube.com/watch?v=${s[1]}`;
+  const id = extractVideoId(url);
+  if (id) return `https://www.youtube.com/watch?v=${id}`;
+  return url;
+}
+
+async function downloadViaRapidApi(videoId, quality) {
+  const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
+  const conv = await axios.get(apiUrl, {
+    headers: { "x-rapidapi-host": "youtube-mp36.p.rapidapi.com", "x-rapidapi-key": RAPIDAPI_KEY },
+    timeout: 30000,
+  });
+  if (conv.data?.status !== "ok" || !conv.data?.link) return null;
+  const qualStr = `${quality}kbps`;
+  return {
+    downloadUrl: conv.data.link,
+    filename: `${conv.data.title || "audio"} (${qualStr}).mp3`,
+    title: conv.data.title || "Audio",
+  };
+}
 
 module.exports = {
   config: {
     name: "ytdl",
-    version: "3.1.0",
+    version: "3.2.0",
     author: "Vincent Magtolis",
     countDown: 5,
     role: 0,
@@ -35,36 +70,61 @@ module.exports = {
 
       const processingMsg = await message.reply("🔍 Searching...");
 
-      let videoUrl;
+      let videoUrl, videoId;
       if (/^https?:\/\//.test(query)) {
-        videoUrl = query;
+        videoUrl = cleanUrl(query);
+        videoId = extractVideoId(videoUrl);
       } else {
-        const search = await ytdl.searchYouTube(query);
-        if (!search?.results?.length) {
+        const results = await ytSearch(query);
+        if (!results?.videos?.length) {
           await message.unsend(processingMsg.messageID);
           return message.reply("❌ No results found.");
         }
-        videoUrl = search.results[0].url;
+        const top = results.videos[0];
+        videoUrl = top.url;
+        videoId = top.videoId;
+      }
+
+      if (!videoId) {
+        await message.unsend(processingMsg.messageID);
+        return message.reply("❌ Invalid YouTube URL.");
       }
 
       await message.unsend(processingMsg.messageID);
       await message.reaction("⏳", event.messageID);
 
-      const qualMP3 = [92, 128, 256, 320].includes(quality) ? quality : 320;
-      const qualMP4 = [144, 360, 480, 720, 1080].includes(quality) ? quality : 1080;
-      const qual = format === "mp3" ? qualMP3 : qualMP4;
-      const result = format === "mp3"
-        ? await ytdl.downloadAudio(videoUrl, qual)
-        : await ytdl.downloadVideo(videoUrl, qual);
+      let downloadInfo = null;
 
-      if (!result?.status || !result?.download?.downloadUrl) {
+      // Try shadowx-ytdl first (best for MP4)
+      const qualMP4 = [144, 360, 480, 720, 1080].includes(quality) ? quality : 1080;
+      const qualMP3 = [92, 128, 256, 320].includes(quality) ? quality : 320;
+
+      if (format === "mp4") {
+        const result = await sytdl.downloadVideo(videoUrl, qualMP4);
+        if (result?.status && result?.download?.downloadUrl) {
+          downloadInfo = { downloadUrl: result.download.downloadUrl, filename: result.download.filename, title: result.download.filename };
+        }
+      } else {
+        // Try shadowx first for MP3 too
+        const result = await sytdl.downloadAudio(videoUrl, qualMP3);
+        if (result?.status && result?.download?.downloadUrl) {
+          downloadInfo = { downloadUrl: result.download.downloadUrl, filename: result.download.filename, title: result.download.filename };
+        }
+        // Fallback to RapidAPI MP3
+        if (!downloadInfo) {
+          const fallback = await downloadViaRapidApi(videoId, qualMP3);
+          if (fallback) downloadInfo = fallback;
+        }
+      }
+
+      if (!downloadInfo) {
         message.reaction("❌", event.messageID);
-        return message.reply("❌ Failed to get download link.");
+        return message.reply("❌ Failed to get download link. The download service may be blocked on this server.");
       }
 
       const ext = format === "mp3" ? "mp3" : "mp4";
       const tmpFile = path.join(os.tmpdir(), `ytdl_${Date.now()}.${ext}`);
-      const dl = await axios.get(result.download.downloadUrl, {
+      const dl = await axios.get(downloadInfo.downloadUrl, {
         responseType: "stream",
         timeout: 120000,
         headers: { "User-Agent": "Mozilla/5.0" },
@@ -80,7 +140,7 @@ module.exports = {
       message.reaction("✅", event.messageID);
 
       await message.reply({
-        body: `🎬 ${result.download.filename || "Video"}`,
+        body: `🎬 ${downloadInfo.title || "Video"}`,
         attachment: fs.createReadStream(tmpFile),
       });
 
