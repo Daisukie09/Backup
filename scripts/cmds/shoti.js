@@ -18,7 +18,7 @@ module.exports = {
   config: {
     name: "shoti",
     version: "1.0.0",
-    author: "VincentSenseni",
+    author: "VincentSensei",
     description: "Send a random TikTok video",
     category: "media",
     usage: "shoti",
@@ -60,7 +60,15 @@ module.exports = {
 
       await message.unsend(spin.messageID);
 
-      const resp = await axios.get(videoUrl, { responseType: "stream", timeout: 30000 });
+      const resp = await axios.get(videoUrl, {
+        responseType: "stream",
+        timeout: 60000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Linux; Android 12; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36",
+          Referer: "https://www.tiktok.com/",
+          Origin: "https://www.tiktok.com",
+        },
+      });
       resp.data.path = "shoti_video.mp4";
 
       await message.reply({
