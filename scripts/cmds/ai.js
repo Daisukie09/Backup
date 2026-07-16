@@ -513,9 +513,7 @@ module.exports.onStart = async ({ api, event, args }) => {
 
     if (thinkingMsg) try { api.unsendMessage(thinkingMsg.messageID); } catch {}
 
-    const voiceStream = await getVoice(replyText).catch(() => null);
-    const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
-    api.sendMessage(msgObj, threadID, (err, info) => {
+    api.sendMessage(replyText, threadID, (err, info) => {
       if (info) {
         global.GoatBot.onReply.set(info.messageID, {
           commandName: module.exports.config.name,
@@ -523,6 +521,11 @@ module.exports.onStart = async ({ api, event, args }) => {
           messageID: info.messageID,
           history: updatedHistory,
         });
+        getVoice(replyText).then(stream => {
+          if (stream) {
+            api.sendMessage({ body: "", attachment: stream }, threadID, info.messageID);
+          }
+        }).catch(() => {});
       }
     }, messageID);
   } catch (error) {
@@ -618,9 +621,7 @@ module.exports.onReply = async ({ api, event, Reply }) => {
 
     if (thinkingMsg) try { api.unsendMessage(thinkingMsg.messageID); } catch {}
 
-    const voiceStream = await getVoice(replyText).catch(() => null);
-    const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
-    api.sendMessage(msgObj, threadID, (err, info) => {
+    api.sendMessage(replyText, threadID, (err, info) => {
       if (info) {
         global.GoatBot.onReply.set(info.messageID, {
           commandName: module.exports.config.name,
@@ -628,6 +629,11 @@ module.exports.onReply = async ({ api, event, Reply }) => {
           messageID: info.messageID,
           history: updatedHistory,
         });
+        getVoice(replyText).then(stream => {
+          if (stream) {
+            api.sendMessage({ body: "", attachment: stream }, threadID, info.messageID);
+          }
+        }).catch(() => {});
       }
     }, messageID);
   } catch (error) {
