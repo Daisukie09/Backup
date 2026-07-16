@@ -6,8 +6,8 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 const MODELS = [
   "llama-3.3-70b-versatile",
   "llama-3.1-8b-instant",
-  "mixtral-8x7b-32768",
-  "gemma2-9b-it",
+  "llama3-70b-8192",
+  "llama3-8b-8192",
 ];
 
 const conversationHistories = new Map();
@@ -364,7 +364,6 @@ async function callGroq(payload, retries = 0) {
       model,
       ...payload,
       temperature: 1,
-      max_completion_tokens: 8192,
       top_p: 1,
     });
     return completion;
