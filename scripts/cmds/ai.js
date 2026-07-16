@@ -246,15 +246,12 @@ async function executeToolCall(toolCall, api, senderID) {
           model: "llama-3.1-8b-instant",
           messages: [
             { role: "system", content: "Analyze the emotion of the given text. Respond with ONLY a JSON object with keys: emotion (one word: happy, sad, angry, excited, scared, surprised, confused, neutral, anxious, grateful, hopeful, lonely, loved, mischievous, proud, relaxed, shy, worried), confidence (0-100), and explanation (brief reason)." },
-            { role: "user", content: text }
+            { role: "user", content: text },
           ],
           temperature: 0.3,
           max_tokens: 200,
         }, {
-          headers: {
-            "Authorization": `Bearer ${GROQ_API_KEY}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
           timeout: 15000,
         });
         let result;
@@ -365,10 +362,7 @@ async function callGroq(payload, retries = 0) {
   try {
     console.log(`[AI] Trying model: ${model} (attempt ${retries + 1})`);
     const response = await axios.post(API_URL, { model, ...payload }, {
-      headers: {
-        "Authorization": `Bearer ${GROQ_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" },
       timeout: 60000,
     });
     console.log(`[AI] Model ${model} succeeded`);
@@ -399,39 +393,38 @@ async function callGroq(payload, retries = 0) {
 async function getVoice(text) {
   if (text.length > 200) return null;
   try {
-    const trans = await axios.get('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=' + encodeURIComponent(text), { timeout: 10000 });
-    const jaText = trans.data[0].map(s => s[0]).join('');
-    const res = await axios.get('https://api.tts.quest/v3/voicevox/synthesis?text=' + encodeURIComponent(jaText) + '&speaker=58', { timeout: 15000 });
+    const trans = await axios.get("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text), { timeout: 10000 });
+    const jaText = trans.data[0].map(s => s[0]).join("");
+    const res = await axios.get("https://api.tts.quest/v3/voicevox/synthesis?text=" + encodeURIComponent(jaText) + "&speaker=58", { timeout: 15000 });
     const audioUrl = res.data.mp3StreamingUrl;
     if (!audioUrl) return null;
-    const audioRes = await axios({ method: 'get', url: audioUrl, responseType: 'stream', timeout: 15000 });
+    const audioRes = await axios({ method: "get", url: audioUrl, responseType: "stream", timeout: 15000 });
     return audioRes.data;
   } catch { return null; }
 }
 
 module.exports.config = {
   name: "ai",
-  version: "4.0.0",
-  hasPermssion: 0,
-  credits: "Vincent Magtolis",
+  version: "4.0.1",
+  role: 0,
+  author: "Vincent Magtolis",
   description: "Chat with the AI assistant with voice attachment",
-  commandCategory: "AI Chat",
-  usages: "<prompt>",
-  cooldowns: 5,
-  dependencies: {
-    "axios": "",
-    "fs": "",
-    "path": ""
-  }
+  category: "AI Chat",
+  guide: {
+    en: "{pn} <prompt> — Example: {pn} what time is it?",
+  },
+  countDown: 5,
 };
 
-module.exports.run = async function ({ api, event, args }) {
+module.exports.onStart = async ({ api, event, args }) => {
   const senderID = event.senderID;
   const threadID = event.threadID;
   const messageID = event.messageID;
   const prompt = args.join(" ").trim();
 
-  if (!prompt) return api.sendMessage("Usage: ai <prompt> — Example: ai what time is it?", threadID, messageID);
+  if (!prompt) {
+    return api.sendMessage("Usage: ai <prompt> — Example: ai what time is it?", threadID, messageID);
+  }
 
   let userName = "User";
   try {
@@ -443,19 +436,22 @@ module.exports.run = async function ({ api, event, args }) {
   if (event.mentions && Object.keys(event.mentions).length > 0) {
     const mentionNames = [];
     for (const [uid, name] of Object.entries(event.mentions)) {
-      mentionNames.push(`${name} (UID: ${uid})`);
+      mentionNames.push(name + " (UID: " + uid + ")");
     }
-    mentionContext = `\nMentioned users in this message: ${mentionNames.join(", ")}.`;
+    mentionContext = "\nMentioned users in this message: " + mentionNames.join(", ") + ".";
   }
 
   api.setMessageReaction("🤖", messageID, () => {}, true);
 
-  const historyKey = `${senderID}_${threadID}`;
+  const historyKey = senderID + "_" + threadID;
   let messages = [];
   const existing = conversationHistories.get(historyKey);
   messages = existing ? [...existing] : [];
 
-  const systemMsg = { role: "system", content: `${SYSTEM_PROMPT}\nThe current user's name is ${userName} (UID: ${senderID}).${mentionContext}` };
+  const systemMsg = {
+    role: "system",
+    content: SYSTEM_PROMPT + "\nThe current user's name is " + userName + " (UID: " + senderID + ")." + mentionContext,
+  };
   messages.unshift(systemMsg);
 
   if (messages.length > 0 && messages[messages.length - 1]?.role !== "user") {
@@ -470,9 +466,9 @@ module.exports.run = async function ({ api, event, args }) {
   }
 
   try {
-    api.sendMessage("⏳ Thinking...", threadID, (err, info) => {
-      if (info) global.temp.waitMsg = info;
-    }, messageID);
+    const thinkingMsg = await new Promise(resolve => {
+      api.sendMessage("⏳ Thinking...", threadID, (err, info) => resolve(info), messageID);
+    });
 
     let response = await callGroq({
       messages: sendPayload,
@@ -515,35 +511,28 @@ module.exports.run = async function ({ api, event, args }) {
 
     conversationHistories.set(historyKey, updatedHistory);
 
-    if (global.temp.waitMsg) {
-      api.unsendMessage(global.temp.waitMsg.messageID);
-      global.temp.waitMsg = null;
-    }
+    if (thinkingMsg) try { api.unsendMessage(thinkingMsg.messageID); } catch {}
 
     const voiceStream = await getVoice(replyText).catch(() => null);
     const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
     api.sendMessage(msgObj, threadID, (err, info) => {
       if (info) {
-        global.client.handleReply.push({
-          name: module.exports.config.name,
-          messageID: info.messageID,
+        global.GoatBot.onReply.set(info.messageID, {
+          commandName: module.exports.config.name,
           author: senderID,
+          messageID: info.messageID,
           history: updatedHistory,
         });
       }
     }, messageID);
   } catch (error) {
     api.setMessageReaction("❌", messageID, () => {}, true);
-    if (global.temp.waitMsg) {
-      api.unsendMessage(global.temp.waitMsg.messageID);
-      global.temp.waitMsg = null;
-    }
-    api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
+    api.sendMessage("❌ Error: " + error.message, threadID, messageID);
   }
 };
 
-module.exports.handleReply = async function ({ api, event, handleReply }) {
-  const { author, history } = handleReply;
+module.exports.onReply = async ({ api, event, Reply }) => {
+  const { author, history } = Reply;
   const senderID = event.senderID;
   const threadID = event.threadID;
   const messageID = event.messageID;
@@ -557,9 +546,9 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
   if (event.mentions && Object.keys(event.mentions).length > 0) {
     const mentionNames = [];
     for (const [uid, name] of Object.entries(event.mentions)) {
-      mentionNames.push(`${name} (UID: ${uid})`);
+      mentionNames.push(name + " (UID: " + uid + ")");
     }
-    mentionContext = `\nMentioned users in this message: ${mentionNames.join(", ")}.`;
+    mentionContext = "\nMentioned users in this message: " + mentionNames.join(", ") + ".";
   }
 
   api.setMessageReaction("🤖", messageID, () => {}, true);
@@ -570,7 +559,10 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
     userName = info[senderID]?.name || "User";
   } catch {}
 
-  const systemMsg = { role: "system", content: `${SYSTEM_PROMPT}\nThe current user's name is ${userName} (UID: ${senderID}).${mentionContext}` };
+  const systemMsg = {
+    role: "system",
+    content: SYSTEM_PROMPT + "\nThe current user's name is " + userName + " (UID: " + senderID + ")." + mentionContext,
+  };
   let messages = history ? [...history] : [];
   messages.unshift(systemMsg);
   messages.push({ role: "user", content: prompt });
@@ -581,9 +573,9 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
   }
 
   try {
-    api.sendMessage("⏳ Thinking...", threadID, (err, info) => {
-      if (info) global.temp.waitMsg = info;
-    }, messageID);
+    const thinkingMsg = await new Promise(resolve => {
+      api.sendMessage("⏳ Thinking...", threadID, (err, info) => resolve(info), messageID);
+    });
 
     let response = await callGroq({
       messages: sendPayload,
@@ -624,29 +616,22 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
       updatedHistory.splice(0, updatedHistory.length - MAX_HISTORY);
     }
 
-    if (global.temp.waitMsg) {
-      api.unsendMessage(global.temp.waitMsg.messageID);
-      global.temp.waitMsg = null;
-    }
+    if (thinkingMsg) try { api.unsendMessage(thinkingMsg.messageID); } catch {}
 
     const voiceStream = await getVoice(replyText).catch(() => null);
     const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
     api.sendMessage(msgObj, threadID, (err, info) => {
       if (info) {
-        global.client.handleReply.push({
-          name: module.exports.config.name,
-          messageID: info.messageID,
+        global.GoatBot.onReply.set(info.messageID, {
+          commandName: module.exports.config.name,
           author: senderID,
+          messageID: info.messageID,
           history: updatedHistory,
         });
       }
     }, messageID);
   } catch (error) {
     api.setMessageReaction("❌", messageID, () => {}, true);
-    if (global.temp.waitMsg) {
-      api.unsendMessage(global.temp.waitMsg.messageID);
-      global.temp.waitMsg = null;
-    }
-    api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
+    api.sendMessage("❌ Error: " + error.message, threadID, messageID);
   }
 };
