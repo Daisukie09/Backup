@@ -1,8 +1,7 @@
 const axios = require("axios");
-const Groq = require("groq-sdk");
 
 const GROQ_API_KEY = "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";
-const groq = new Groq({ apiKey: GROQ_API_KEY });
+const API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODELS = [
   "llama-3.3-70b-versatile",
   "llama-3.1-8b-instant",
@@ -243,7 +242,7 @@ async function executeToolCall(toolCall, api, senderID) {
       const text = parsed.text || "";
       if (!text) return JSON.stringify({ error: "No text provided" });
       try {
-        const completion = await groq.chat.completions.create({
+        const res = await axios.post(API_URL, {
           model: "llama-3.1-8b-instant",
           messages: [
             { role: "system", content: "Analyze the emotion of the given text. Respond with ONLY a JSON object with keys: emotion (one word: happy, sad, angry, excited, scared, surprised, confused, neutral, anxious, grateful, hopeful, lonely, loved, mischievous, proud, relaxed, shy, worried), confidence (0-100), and explanation (brief reason)." },
@@ -251,9 +250,15 @@ async function executeToolCall(toolCall, api, senderID) {
           ],
           temperature: 0.3,
           max_tokens: 200,
+        }, {
+          headers: {
+            "Authorization": `Bearer ${GROQ_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
         });
         let result;
-        try { result = JSON.parse(completion.choices[0].message.content.replace(/```json|```/g, "").trim()); } catch { result = { emotion: "neutral", confidence: 50, explanation: "Could not analyze precisely." }; }
+        try { result = JSON.parse(res.data.choices[0].message.content.replace(/```json|```/g, "").trim()); } catch { result = { emotion: "neutral", confidence: 50, explanation: "Could not analyze precisely." }; }
         return JSON.stringify(result);
       } catch {
         return JSON.stringify({ emotion: "neutral", confidence: 50, explanation: "Analysis unavailable." });
@@ -358,30 +363,36 @@ async function callGroq(payload, retries = 0) {
   }
 
   try {
-    const completion = await groq.chat.completions.create({
-      model,
-      ...payload,
-      temperature: 1,
-      top_p: 1,
+    console.log(`[AI] Trying model: ${model} (attempt ${retries + 1})`);
+    const response = await axios.post(API_URL, { model, ...payload }, {
+      headers: {
+        "Authorization": `Bearer ${GROQ_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 60000,
     });
-    return completion;
+    console.log(`[AI] Model ${model} succeeded`);
+    return response.data;
   } catch (error) {
-    if (error.status === 429) {
+    const status = error.response?.status || error.status || 0;
+    const errMsg = error.response?.data?.error?.message || error.message;
+    console.log(`[AI] Model "${model}" failed (${status}): ${errMsg}`);
+
+    if (status === 429) {
       rateLimitUntil.set(model, Date.now() + 10000);
       if (retries >= 8) throw new Error("AI is busy. Try again later.");
       await new Promise(r => setTimeout(r, 2500));
       return callGroq(payload, retries + 1);
     }
-    if (error.status >= 500 && retries < 3) {
+    if (status >= 500 && retries < 3) {
       await new Promise(r => setTimeout(r, 2000));
       return callGroq(payload, retries + 1);
     }
-    console.log(`[AI] Model "${model}" failed: ${error.message}`);
     if (retries < 8) {
       await new Promise(r => setTimeout(r, 1000));
       return callGroq(payload, retries + 1);
     }
-    throw new Error(`AI Error (model: ${model}): ${error.message}`);
+    throw new Error(`AI Error (model: ${model}, status: ${status}): ${errMsg}`);
   }
 }
 
@@ -409,7 +420,6 @@ module.exports.config = {
   cooldowns: 5,
   dependencies: {
     "axios": "",
-    "groq-sdk": "",
     "fs": "",
     "path": ""
   }
@@ -460,6 +470,10 @@ module.exports.run = async function ({ api, event, args }) {
   }
 
   try {
+    api.sendMessage("⏳ Thinking...", threadID, (err, info) => {
+      if (info) global.temp.waitMsg = info;
+    }, messageID);
+
     let response = await callGroq({
       messages: sendPayload,
       tools: TOOLS,
@@ -501,6 +515,11 @@ module.exports.run = async function ({ api, event, args }) {
 
     conversationHistories.set(historyKey, updatedHistory);
 
+    if (global.temp.waitMsg) {
+      api.unsendMessage(global.temp.waitMsg.messageID);
+      global.temp.waitMsg = null;
+    }
+
     const voiceStream = await getVoice(replyText).catch(() => null);
     const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
     api.sendMessage(msgObj, threadID, (err, info) => {
@@ -515,7 +534,11 @@ module.exports.run = async function ({ api, event, args }) {
     }, messageID);
   } catch (error) {
     api.setMessageReaction("❌", messageID, () => {}, true);
-    api.sendMessage(`AI Error: ${error.message}`, threadID, messageID);
+    if (global.temp.waitMsg) {
+      api.unsendMessage(global.temp.waitMsg.messageID);
+      global.temp.waitMsg = null;
+    }
+    api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
   }
 };
 
@@ -558,6 +581,10 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
   }
 
   try {
+    api.sendMessage("⏳ Thinking...", threadID, (err, info) => {
+      if (info) global.temp.waitMsg = info;
+    }, messageID);
+
     let response = await callGroq({
       messages: sendPayload,
       tools: TOOLS,
@@ -597,6 +624,11 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
       updatedHistory.splice(0, updatedHistory.length - MAX_HISTORY);
     }
 
+    if (global.temp.waitMsg) {
+      api.unsendMessage(global.temp.waitMsg.messageID);
+      global.temp.waitMsg = null;
+    }
+
     const voiceStream = await getVoice(replyText).catch(() => null);
     const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
     api.sendMessage(msgObj, threadID, (err, info) => {
@@ -611,6 +643,10 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
     }, messageID);
   } catch (error) {
     api.setMessageReaction("❌", messageID, () => {}, true);
-    api.sendMessage(`AI Error: ${error.message}`, threadID, messageID);
+    if (global.temp.waitMsg) {
+      api.unsendMessage(global.temp.waitMsg.messageID);
+      global.temp.waitMsg = null;
+    }
+    api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
   }
 };
