@@ -42,8 +42,9 @@ module.exports = {
 
         const botID = api.getCurrentUserID();
         const botSelf = added.find(p => p.userFbId == botID);
-        const prefix = global.utils.getPrefix(threadID) || global.config.PREFIX || "/";
-        const botName = global.config.BOTNAME || "Goat Bot";
+        const { config } = global.GoatBot;
+        const prefix = global.utils.getPrefix(threadID) || (config && config.PREFIX) || "/";
+        const botName = (config && config.BOTNAME) || "Goat Bot";
 
         // ---- SPECIAL ACTION 1: Bot joined ----
         if (botSelf) {
