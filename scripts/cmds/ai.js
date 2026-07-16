@@ -3,7 +3,6 @@ const axios = require("axios");
 const OPENROUTER_API_KEY = "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";
 const API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODELS = [
-  "openrouter/free",
   "openai/gpt-oss-120b:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "poolside/laguna-m.1:free",
@@ -387,7 +386,12 @@ async function callOpenRouter(payload, retries = 0) {
       await new Promise(r => setTimeout(r, 2000));
       return callOpenRouter(payload, retries + 1);
     }
-    throw error;
+    console.log(`[AI] Model "${model}" failed (${error.response?.status}): ${error.response?.data?.error?.message || error.message}`);
+    if (retries < 8) {
+      await new Promise(r => setTimeout(r, 1000));
+      return callOpenRouter(payload, retries + 1);
+    }
+    throw new Error(`AI Error (model: ${model}): ${error.response?.data?.error?.message || error.message}`);
   }
 }
 
