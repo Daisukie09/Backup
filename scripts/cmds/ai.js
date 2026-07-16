@@ -308,7 +308,9 @@ module.exports.run = async function ({ api, event, args }) {
 
     conversationHistories.set(historyKey, updatedHistory);
 
-    api.sendMessage(replyText, threadID, (err, info) => {
+    const voiceStream = await getVoice(replyText).catch(() => null);
+    const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
+    api.sendMessage(msgObj, threadID, (err, info) => {
       if (info) {
         global.client.handleReply.push({
           name: module.exports.config.name,
@@ -316,11 +318,6 @@ module.exports.run = async function ({ api, event, args }) {
           author: senderID,
           history: updatedHistory,
         });
-        getVoice(replyText).then(voiceStream => {
-          if (voiceStream) {
-            api.sendMessage({ body: "🎙️", attachment: voiceStream }, threadID, () => {}, info.messageID);
-          }
-        }).catch(() => {});
       }
     }, messageID);
   } catch (error) {
@@ -398,7 +395,9 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
       updatedHistory.splice(0, updatedHistory.length - MAX_HISTORY);
     }
 
-    api.sendMessage(replyText, threadID, (err, info) => {
+    const voiceStream = await getVoice(replyText).catch(() => null);
+    const msgObj = voiceStream ? { body: replyText, attachment: voiceStream } : replyText;
+    api.sendMessage(msgObj, threadID, (err, info) => {
       if (info) {
         global.client.handleReply.push({
           name: module.exports.config.name,
@@ -406,11 +405,6 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
           author: senderID,
           history: updatedHistory,
         });
-        getVoice(replyText).then(voiceStream => {
-          if (voiceStream) {
-            api.sendMessage({ body: "🎙️", attachment: voiceStream }, threadID, () => {}, info.messageID);
-          }
-        }).catch(() => {});
       }
     }, messageID);
   } catch (error) {
