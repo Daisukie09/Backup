@@ -1,13 +1,13 @@
 const axios = require("axios");
+const Groq = require("groq-sdk");
 
-const OPENROUTER_API_KEY = "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";
-const API_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_KEY = "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";
+const groq = new Groq({ apiKey: GROQ_API_KEY });
 const MODELS = [
-  "openai/gpt-oss-120b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "poolside/laguna-m.1:free",
-  "google/gemma-4-31b-it:free",
-  "qwen/qwen3-coder:free",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "mixtral-8x7b-32768",
+  "gemma2-9b-it",
 ];
 
 const conversationHistories = new Map();
@@ -245,22 +245,17 @@ async function executeToolCall(toolCall, api, senderID) {
       const text = parsed.text || "";
       if (!text) return JSON.stringify({ error: "No text provided" });
       try {
-        const res = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
-          model: "openai/gpt-oss-20b:free",
+        const completion = await groq.chat.completions.create({
+          model: "llama-3.1-8b-instant",
           messages: [
             { role: "system", content: "Analyze the emotion of the given text. Respond with ONLY a JSON object with keys: emotion (one word: happy, sad, angry, excited, scared, surprised, confused, neutral, anxious, grateful, hopeful, lonely, loved, mischievous, proud, relaxed, shy, worried), confidence (0-100), and explanation (brief reason)." },
             { role: "user", content: text }
           ],
+          temperature: 0.3,
           max_tokens: 200,
-        }, {
-          headers: {
-            "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          timeout: 15000,
         });
         let result;
-        try { result = JSON.parse(res.data.choices[0].message.content.replace(/```json|```/g, "").trim()); } catch { result = { emotion: "neutral", confidence: 50, explanation: "Could not analyze precisely." }; }
+        try { result = JSON.parse(completion.choices[0].message.content.replace(/```json|```/g, "").trim()); } catch { result = { emotion: "neutral", confidence: 50, explanation: "Could not analyze precisely." }; }
         return JSON.stringify(result);
       } catch {
         return JSON.stringify({ emotion: "neutral", confidence: 50, explanation: "Analysis unavailable." });
@@ -353,7 +348,7 @@ async function executeToolCall(toolCall, api, senderID) {
   }
 }
 
-async function callOpenRouter(payload, retries = 0) {
+async function callGroq(payload, retries = 0) {
   const modelIndex = retries % MODELS.length;
   const model = MODELS[modelIndex];
 
@@ -361,37 +356,35 @@ async function callOpenRouter(payload, retries = 0) {
   if (blocked && Date.now() < blocked) {
     if (retries >= 8) throw new Error("AI is busy. Try again later.");
     await new Promise(r => setTimeout(r, 3000));
-    return callOpenRouter(payload, retries + 1);
+    return callGroq(payload, retries + 1);
   }
 
   try {
-    const response = await axios.post(API_URL, { model, ...payload }, {
-      headers: {
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://facebook.com",
-        "X-Title": "VincentSensei Bot",
-      },
-      timeout: 60000,
+    const completion = await groq.chat.completions.create({
+      model,
+      ...payload,
+      temperature: 1,
+      max_completion_tokens: 8192,
+      top_p: 1,
     });
-    return response;
+    return completion;
   } catch (error) {
-    if (error.response?.status === 429) {
+    if (error.status === 429) {
       rateLimitUntil.set(model, Date.now() + 10000);
       if (retries >= 8) throw new Error("AI is busy. Try again later.");
       await new Promise(r => setTimeout(r, 2500));
-      return callOpenRouter(payload, retries + 1);
+      return callGroq(payload, retries + 1);
     }
-    if (error.response?.status >= 500 && retries < 3) {
+    if (error.status >= 500 && retries < 3) {
       await new Promise(r => setTimeout(r, 2000));
-      return callOpenRouter(payload, retries + 1);
+      return callGroq(payload, retries + 1);
     }
-    console.log(`[AI] Model "${model}" failed (${error.response?.status}): ${error.response?.data?.error?.message || error.message}`);
+    console.log(`[AI] Model "${model}" failed: ${error.message}`);
     if (retries < 8) {
       await new Promise(r => setTimeout(r, 1000));
-      return callOpenRouter(payload, retries + 1);
+      return callGroq(payload, retries + 1);
     }
-    throw new Error(`AI Error (model: ${model}): ${error.response?.data?.error?.message || error.message}`);
+    throw new Error(`AI Error (model: ${model}): ${error.message}`);
   }
 }
 
@@ -410,7 +403,7 @@ async function getVoice(text) {
 
 module.exports.config = {
   name: "ai",
-  version: "3.2.0",
+  version: "4.0.0",
   hasPermssion: 0,
   credits: "Vincent Magtolis",
   description: "Chat with the AI assistant with voice attachment",
@@ -419,6 +412,7 @@ module.exports.config = {
   cooldowns: 5,
   dependencies: {
     "axios": "",
+    "groq-sdk": "",
     "fs": "",
     "path": ""
   }
@@ -469,14 +463,14 @@ module.exports.run = async function ({ api, event, args }) {
   }
 
   try {
-    let response = await callOpenRouter({
+    let response = await callGroq({
       messages: sendPayload,
       tools: TOOLS,
       temperature: 0.7,
       max_tokens: 4096,
     });
 
-    let choice = response.data?.choices?.[0];
+    let choice = response.choices?.[0];
     let msg = choice?.message;
     let finalContent = msg?.content || "";
 
@@ -488,13 +482,13 @@ module.exports.run = async function ({ api, event, args }) {
       }
       sendPayload.push(systemMsg);
 
-      response = await callOpenRouter({
+      response = await callGroq({
         messages: sendPayload,
         temperature: 0.7,
         max_tokens: 2048,
       });
 
-      finalContent = response.data?.choices?.[0]?.message?.content || finalContent;
+      finalContent = response.choices?.[0]?.message?.content || finalContent;
     }
 
     const replyText = finalContent || "No response.";
@@ -567,14 +561,14 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
   }
 
   try {
-    let response = await callOpenRouter({
+    let response = await callGroq({
       messages: sendPayload,
       tools: TOOLS,
       temperature: 0.7,
       max_tokens: 4096,
     });
 
-    let choice = response.data?.choices?.[0];
+    let choice = response.choices?.[0];
     let msg = choice?.message;
     let finalContent = msg?.content || "";
 
@@ -586,13 +580,13 @@ module.exports.handleReply = async function ({ api, event, handleReply }) {
       }
       sendPayload.push(systemMsg);
 
-      response = await callOpenRouter({
+      response = await callGroq({
         messages: sendPayload,
         temperature: 0.7,
         max_tokens: 2048,
       });
 
-      finalContent = response.data?.choices?.[0]?.message?.content || finalContent;
+      finalContent = response.choices?.[0]?.message?.content || finalContent;
     }
 
     const replyText = finalContent || "No response.";
