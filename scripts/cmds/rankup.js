@@ -1,5 +1,4 @@
 const axios = require("axios");
-const sharp = require("sharp");
 
 const DELTA_NEXT = 5;
 
@@ -13,89 +12,7 @@ function levelToExp(level) {
   return Math.floor(((level * level - level) * DELTA_NEXT) / 2);
 }
 
-async function createRankupCard(avatarUrl, name, level, rank, totalExp) {
-  const cardW = 800, cardH = 400;
-  const avatarSize = 130;
 
-  let avatarBuf = null;
-  if (avatarUrl && (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://"))) {
-    try {
-      const resp = await axios.get(avatarUrl, { responseType: "arraybuffer", timeout: 15000 });
-      avatarBuf = Buffer.from(resp.data);
-    } catch {}
-  }
-
-  const bgSvg = Buffer.from(
-    `<svg width="${cardW}" height="${cardH}">
-      <defs>
-        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#ff6b6b"/>
-          <stop offset="50%" stop-color="#ee5a24"/>
-          <stop offset="100%" stop-color="#f0932b"/>
-        </linearGradient>
-        <linearGradient id="header" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
-          <stop offset="50%" stop-color="rgba(255,255,255,0.25)"/>
-          <stop offset="100%" stop-color="rgba(255,255,255,0.15)"/>
-        </linearGradient>
-      </defs>
-      <rect width="${cardW}" height="${cardH}" fill="url(#bg)" rx="24"/>
-      <rect x="10" y="10" width="${cardW - 20}" height="60" fill="url(#header)" rx="16"/>
-      <path d="M 0 60 Q ${cardW / 4} 90 ${cardW / 2} 60 T ${cardW} 60 L ${cardW} 0 L 0 0 Z" fill="rgba(255,255,255,0.05)"/>
-      <path d="M 0 70 Q ${cardW / 2} 30 ${cardW} 70" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
-      <circle cx="50" cy="${cardH - 50}" r="30" fill="rgba(255,255,255,0.05)"/>
-      <circle cx="${cardW - 40}" cy="50" r="20" fill="rgba(255,255,255,0.08)"/>
-      <circle cx="${cardW - 30}" cy="40" r="8" fill="rgba(255,255,255,0.15)"/>
-      <circle cx="30" cy="30" r="5" fill="rgba(255,255,255,0.2)"/>
-    </svg>`
-  );
-
-  let composite = [];
-
-  if (avatarBuf) {
-    const circleMask = Buffer.from(
-      `<svg width="${avatarSize}" height="${avatarSize}"><circle cx="${avatarSize / 2}" cy="${avatarSize / 2}" r="${avatarSize / 2}" fill="white"/></svg>`
-    );
-    const avatarCirc = await sharp(avatarBuf)
-      .resize(avatarSize, avatarSize, { fit: 'cover' })
-      .composite([{ input: circleMask, blend: 'dest-in' }])
-      .png()
-      .toBuffer();
-
-    const borderRing = Buffer.from(
-      `<svg width="${avatarSize + 10}" height="${avatarSize + 10}">
-        <circle cx="${(avatarSize + 10) / 2}" cy="${(avatarSize + 10) / 2}" r="${avatarSize / 2 + 3}" fill="none" stroke="#fff" stroke-width="4"/>
-        <circle cx="${(avatarSize + 10) / 2}" cy="${(avatarSize + 10) / 2}" r="${avatarSize / 2 + 5}" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
-      </svg>`
-    );
-
-    composite.push(
-      { input: avatarCirc, top: 75, left: 45 },
-      { input: borderRing, top: 71, left: 41 }
-    );
-  }
-
-  const textSvg = Buffer.from(
-    `<svg width="${cardW}" height="${cardH}">
-      <text x="${cardW / 2}" y="48" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" fill="#fff" font-weight="bold" text-anchor="middle" letter-spacing="3">⚡ LEVEL UP! ⚡</text>
-      <text x="205" y="130" font-family="'Trebuchet MS', Arial, sans-serif" font-size="32" fill="#fff" font-weight="bold">${escapeXml(name)}</text>
-      <text x="205" y="245" font-family="'Trebuchet MS', Arial, sans-serif" font-size="80" fill="#fff" font-weight="bold">${level}</text>
-      <text x="295" y="200" font-family="Arial, sans-serif" font-size="18" fill="rgba(255,255,255,0.7)">LV</text>
-      <rect x="190" y="275" width="240" height="50" rx="12" fill="rgba(0,0,0,0.2)"/>
-      <text x="205" y="307" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)">Rank ${rank}</text>
-      <text x="310" y="307" font-family="Arial, sans-serif" font-size="16" fill="rgba(255,255,255,0.9)">EXP ${totalExp}</text>
-      <line x1="295" y1="276" x2="295" y2="324" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
-    </svg>`
-  );
-
-  composite.push({ input: textSvg, top: 0, left: 0 });
-
-  return sharp(bgSvg).composite(composite).png().toBuffer();
-}
-
-function escapeXml(str) {
-  return String(str).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[c]);
-}
 
 module.exports = {
   config: {
@@ -166,9 +83,10 @@ module.exports = {
       } catch {}
 
       try {
-        const cardBuf = await createRankupCard(avatarUrl, userName, level || 1, `#${leaderboardRank}`, exp);
+        const canvasUrl = `https://betadash-api-swordslush-production.up.railway.app/api/rankup-v2?uid=${senderID}`;
+        const resp = await axios.get(canvasUrl, { responseType: 'arraybuffer', timeout: 30000 });
         const { Readable } = require("stream");
-        const stream = Readable.from(cardBuf);
+        const stream = Readable.from(Buffer.from(resp.data));
         stream.path = "rankup.png";
         return message.send({
           body: `${getLang("checkTitle")}\n${getLang("levelup").replace(/{userName}/g, userName).replace(/{level}/g, level || 1)}`,
@@ -176,7 +94,7 @@ module.exports = {
           mentions: [{ tag: userName, id: senderID }],
         });
       } catch (e) {
-        console.error("[RANKUP] Card generation failed:", e.message);
+        console.error("[RANKUP] Canvas failed:", e.message);
         return message.send({
           body: `${getLang("checkTitle")}\n${getLang("levelup").replace(/{userName}/g, userName).replace(/{level}/g, level || 1)}\n⭐ **Level ${level || 1}** — ${exp} total EXP (Rank #${leaderboardRank})`,
           mentions: [{ tag: userName, id: senderID }],
@@ -207,6 +125,8 @@ module.exports = {
 
   onChat: async function ({ api, event, usersData, threadsData, message, getLang }) {
     const { threadID, senderID } = event;
+
+    if (senderID == api.getCurrentUserID()) return;
 
     const rankupEnabled = await threadsData.get(threadID, "settings.rankupEnabled");
     if (rankupEnabled === false) return;
@@ -256,9 +176,10 @@ module.exports = {
           .replace(/{@name}/g, `@${userName}`);
 
         try {
-          const cardBuf = await createRankupCard(avatarUrl, userName, currentLevel, `#${leaderboardRank}`, exp);
+          const canvasUrl = `https://betadash-api-swordslush-production.up.railway.app/api/rankup-v2?uid=${senderID}`;
+          const resp = await axios.get(canvasUrl, { responseType: 'arraybuffer', timeout: 30000 });
           const { Readable } = require("stream");
-          const stream = Readable.from(cardBuf);
+          const stream = Readable.from(Buffer.from(resp.data));
           stream.path = "rankup.png";
           await message.send({
             body: rankupMessage,
@@ -266,7 +187,7 @@ module.exports = {
             mentions: [{ tag: userName, id: senderID }],
           });
         } catch (e) {
-          console.error("[RANKUP] Card generation failed:", e.message);
+          console.error("[RANKUP] Canvas failed:", e.message);
           const form = {
             body: `${rankupMessage}\n⭐ **Level ${currentLevel}** — ${exp} total EXP (Rank #${leaderboardRank})`,
             mentions: [{ tag: userName, id: senderID }],
