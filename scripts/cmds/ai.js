@@ -1,6 +1,6 @@
 const axios = require("axios");
 
-const GROQ_API_KEY = "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";
+const GROQ_API_KEY = "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";
 const API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODELS = [
   "llama-3.3-70b-versatile",
